@@ -396,3 +396,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+/.idea/.idea.vcortex/.idea
+/mnist_digits
+/mnist_fashion
+/pandas_or_bears
