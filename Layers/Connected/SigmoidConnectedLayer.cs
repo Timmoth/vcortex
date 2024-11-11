@@ -1,9 +1,6 @@
-using System.Numerics;
-using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using ILGPU;
 using ILGPU.Algorithms;
-using ILGPU.IR;
 using ILGPU.Runtime;
 using vcortex.Accelerated;
 
@@ -34,17 +31,9 @@ public class SigmoidConnectedLayer : IConnectedLayer
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            BiasOffset = BiasOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs
-        };
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     }
 
     public void Connect(ConnectedInputConfig config)
@@ -60,17 +49,9 @@ public class SigmoidConnectedLayer : IConnectedLayer
         NextLayerErrorOffset = config.NumInputs;
         GradientOffset = 0;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            BiasOffset = BiasOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs
-        };
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     }
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
@@ -104,21 +85,6 @@ public class SigmoidConnectedLayer : IConnectedLayer
     public int ParameterOffset { get; private set; }
     public float[] Parameters { get; set; }
 
-    public void Forward(float[] activations)
-    {
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            var sum = Parameters[ParameterOffset + BiasOffset + i];
-            var weightsOffset = ParameterOffset + i * NumInputs;
-
-            // Process each input element individually
-            for (var j = 0; j < NumInputs; j++)
-                sum += activations[ActivationInputOffset + j] * Parameters[weightsOffset + j];
-
-            // Apply the activation function to the sum and store it in the output
-            activations[ActivationOutputOffset + i] = Activate(sum);
-        }
-    }
     public static void ForwardKernelImpl(
         Index1D index,
         NetworkData networkData,
@@ -148,35 +114,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
     {
         ForwardKernel(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
     }
-
-    public void Backward(float[] activations, float[] errors,
-        float[] gradients, float learningRate)
-    {
-        // Reset the current layer's errors
-        Array.Clear(errors, CurrentLayerErrorOffset, NumInputs);
-
-        // Loop over each neuron in the output layer
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            // Calculate delta for this neuron using the derivative of the activation function
-            var delta = errors[NextLayerErrorOffset + i] * Derivative(activations[ActivationOutputOffset + i]);
-            var weightsOffset = ParameterOffset + i * NumInputs;
-
-            // Inner loop to update weights and accumulate errors, element-by-element
-            for (var j = 0; j < NumInputs; j++)
-            {
-                // Update the error for the current input
-                errors[CurrentLayerErrorOffset + j] += delta * Parameters[weightsOffset + j];
-
-                // Update the weight for this input
-                gradients[GradientOffset + i * NumInputs + j] = delta * activations[ActivationInputOffset + j];
-            }
-
-            // Update the bias for this neuron
-            gradients[GradientOffset + BiasOffset + i] = delta;
-        }
-    }
-
+    
     public static void BackwardKernel1Impl(
         Index1D index,
         NetworkData networkData,
@@ -241,40 +179,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
         BackwardKernel2(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
             accelerator.Buffers.Errors.View);
     }
-
-    public void AccumulateGradients(float[][] gradients, float learningRate)
-    {
-        var batchSize = gradients.Length;
-        var scaledLearningRate = learningRate / batchSize; // Scale learning rate by batch size for averaging
-
-        // Loop over each output neuron
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            // Access weights for this neuron
-            var weightsOffset = ParameterOffset + i * NumInputs;
-
-            // Accumulate weight gradients
-            for (var j = 0; j < NumInputs; j++)
-            {
-                var gradientIndex = i * NumInputs + j;
-
-                // Sum gradients for this weight across the batch
-                var totalWeightGradient = 0.0f;
-                foreach (var gradient in gradients) totalWeightGradient += gradient[GradientOffset + gradientIndex];
-
-                // Average the gradient and apply weight update
-                Parameters[weightsOffset + j] -= scaledLearningRate * totalWeightGradient;
-            }
-
-            // Sum and average bias gradients
-            var totalBiasGradient = 0.0f;
-            foreach (var gradient in gradients) totalBiasGradient += gradient[GradientOffset + BiasOffset + i];
-
-            // Apply averaged bias gradient update
-            Parameters[ParameterOffset + BiasOffset + i] -= scaledLearningRate * totalBiasGradient;
-        }
-    }
-
+    
     public static void GradientAccumulationKernel1Impl(
         Index1D index,
         NetworkData networkData,
@@ -290,8 +195,6 @@ public class SigmoidConnectedLayer : IConnectedLayer
         var inputIndex = index % layerData.NumInputs;
 
         // Loop over each output neuron
-        // Update the weights for this neuron
-        var weightOffset = layerData.ParameterOffset + layerData.NumInputs * outputIndex + inputIndex;
 
         // Accumulate weight gradients
         var gradientIndex = + layerData.GradientOffset + outputIndex * layerData.NumInputs + inputIndex;
@@ -307,15 +210,16 @@ public class SigmoidConnectedLayer : IConnectedLayer
         weightGradient /= batchSize;
 
         // Update the first and second moment estimates
-        firstMoment[gradientIndex] = layerData.Beta1 * firstMoment[gradientIndex] + (1 - layerData.Beta1) * weightGradient;
-        secondMoment[gradientIndex] = layerData.Beta2 * secondMoment[gradientIndex] + (1 - layerData.Beta2) * weightGradient * weightGradient;
+        firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * weightGradient;
+        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * weightGradient * weightGradient;
 
         // Bias correction for the moments
-        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
-        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
-        
+        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
+        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
+
         // Average the gradient and apply the weight update
-        parameters[weightOffset] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + layerData.Epsilon);
+        var weightOffset = layerData.ParameterOffset + layerData.NumInputs * outputIndex + inputIndex;
+        parameters[weightOffset] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
     }
 
     public static void GradientAccumulationKernel2Impl(
@@ -329,9 +233,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
     {
         // Number of samples in the batch
         var batchSize = networkData.BatchSize;
-        var lr = networkData.LearningRate; // Scale learning rate by batch size for averaging
-        var interBatchIndex = index;
-        var gradientIndex = layerData.GradientOffset + layerData.BiasOffset + interBatchIndex;
+        var gradientIndex = layerData.GradientOffset + layerData.BiasOffset + index;
         
         // Accumulate and average the bias gradients
         var biasGradient = 0.0f;
@@ -344,15 +246,15 @@ public class SigmoidConnectedLayer : IConnectedLayer
         biasGradient /= batchSize;
 
         // Update the first and second moment estimates
-        firstMoment[gradientIndex] = layerData.Beta1 * firstMoment[gradientIndex] + (1 - layerData.Beta1) * biasGradient;
-        secondMoment[gradientIndex] = layerData.Beta2 * secondMoment[gradientIndex] + (1 - layerData.Beta2) * biasGradient * biasGradient;
+        firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * biasGradient;
+        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * biasGradient * biasGradient;
 
         // Bias correction for the moments
-        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
-        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
+        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
         
         // Average the gradient and apply the weight update
-        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + layerData.Epsilon);
+        parameters[layerData.ParameterOffset + layerData.BiasOffset + index] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
         
     }
 
@@ -397,17 +299,4 @@ public class SigmoidConnectedLayer : IConnectedLayer
     }
 
     public LayerData LayerData { get; set; }
-
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public float Activate(float x)
-    {
-        return 1.0f / (1.0f +  XMath.Exp(-x));
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public float Derivative(float x)
-    {
-        return x * (1.0f - x);
-    }
 }

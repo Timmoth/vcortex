@@ -1,10 +1,6 @@
 using System.Diagnostics;
-using System.Net;
-using System.Reflection.Emit;
 using ILGPU.Algorithms;
-using ILGPU.Util;
 using vcortex.Accelerated;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace vcortex;
 
@@ -14,7 +10,8 @@ public static class Trainer
         float learningRate)
     {
         Console.WriteLine("Training network");
-        accelerator.Network.NetworkData.LearningRate = learningRate;
+        accelerator.Network.NetworkData = new NetworkData(learningRate, accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.GradientCount, 200, 0.9f, 0.999f, 1e-8f,
+            0);
 
         // Forward Pass
         var batchSize = accelerator.Network.NetworkData.BatchSize;
@@ -45,90 +42,6 @@ public static class Trainer
             var averageMSE = epochError / sampleCount;
             Console.WriteLine(
                 $"Epoch {epoch}, Average MSE: {averageMSE:F4}, Time: {stopwatch.ElapsedMilliseconds}ms, {Math.Round(sampleCount / stopwatch.Elapsed.TotalSeconds)}/s");
-        }
-    }
-
-    public static void TrainBatched(Network network, List<(float[] imageData, float[] label)> data, int epochs,
-        float learningRate, int batchSize)
-    {
-        Console.WriteLine("Training network");
-
-        var activations = new float[batchSize][];
-        var errors = new float[batchSize][];
-        var gradients = new float[batchSize][];
-
-        for (var i = 0; i < batchSize; i++)
-        {
-            activations[i] = new float[network.ActivationCount];
-            errors[i] = new float[network.ActivationCount]; 
-            gradients[i] = new float[network.GradientCount];
-        }
-
-        for (var epoch = 0; epoch < epochs; epoch++)
-        {
-            // Shuffle the data at the beginning of each epoch
-            var shuffledData = data.OrderBy(x => Random.Shared.Next()).ToList();
-            var stopwatch = Stopwatch.StartNew();
-
-            float epochError = 0;
-            var sampleCount = 0;
-
-            // Divide the data into mini-batches
-            for (var batchStart = 0; batchStart < shuffledData.Count; batchStart += batchSize)
-            {
-                // Get the current batch
-                var currentBatch = shuffledData.Skip(batchStart).Take(batchSize).ToList();
-
-                // Perform forward and backward passes and get the batch error
-                var batchError = network.Train(currentBatch, activations, errors, gradients, learningRate);
-
-                // Accumulate batch error
-                epochError += batchError;
-                sampleCount += currentBatch.Count;
-            }
-
-            // Calculate and report the average MSE for the epoch
-            var averageMSE = epochError / sampleCount;
-            Console.WriteLine(
-                $"Epoch {epoch}, Average MSE: {averageMSE:F4}, Time: {stopwatch.ElapsedMilliseconds}ms, {Math.Round(sampleCount / stopwatch.Elapsed.TotalSeconds)}/s");
-        }
-    }
-
-
-    public static void TrainSequential(Network network, List<(float[] imageData, float[] label)> data, int epochs,
-        float learningRate)
-    {
-        Console.WriteLine("Training network");
-
-        var activations = new float[network.ActivationCount];
-        var errors = new float[network.ActivationCount];
-
-        var gradients = new float[network.GradientCount];
-
-        // Forward Pass
-        for (var i = 0; i < epochs; i++)
-        {
-            var shuffledData = data.OrderBy(x => Random.Shared.Next()).ToList();
-            var stopwatch = Stopwatch.StartNew();
-
-            float epochError = 0;
-            var sampleCount = 0;
-
-            foreach (var (imageData, label) in shuffledData)
-            {
-                var sampleError = network.Train(imageData, label, activations, errors, gradients, learningRate);
-                epochError += sampleError;
-                sampleCount++;
-
-                if (sampleCount > 1000)
-                {
-                    break;
-                }
-            }
-
-            // Calculate average MSE for the epoch
-            var averageMSE = epochError / sampleCount;
-            Console.WriteLine($"Epoch {i}, Average MSE: {averageMSE:F4}, Time: {stopwatch.ElapsedMilliseconds}ms");
         }
     }
 

@@ -47,23 +47,10 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            OutputChannels = OutputChannels,
-            PoolSize = PoolSize
-        };
+
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, PoolSize);
+
     }
 
     public void Connect(ConvolutionInputConfig config)
@@ -81,96 +68,12 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = NumInputs;
         GradientOffset = 0;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            OutputChannels = OutputChannels,
-            PoolSize = PoolSize
-        };
-    }
 
-    public void Forward(float[] activations)
-    {
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
-
-        for (var c = 0; c < InputChannels; c++)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                {
-                    var outputIndex = y * OutputWidth + x + c * outputChannelOffset;
-
-                    var max = float.MinValue;
-
-                    // SIMD for pooling region, process multiple elements at once
-                    for (var ky = 0; ky < PoolSize; ky++)
-                        for (var kx = 0; kx < PoolSize; kx++)
-                        {
-                            var oldX = x * PoolSize + kx;
-                            var oldY = y * PoolSize + ky;
-                            var inputIndex = oldY * InputWidth + oldX + c * inputChannelOffset;
-
-                            // Here, SIMD could help if PoolSize is large, by comparing multiple input elements at once
-                            max = XMath.Max(max, activations[ActivationInputOffset + inputIndex]);
-                        }
-
-                    activations[ActivationOutputOffset + outputIndex] = max;
-                }
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, PoolSize);
     }
 
     public int GradientCount => 0;
-
-    public void Backward(float[] activations, float[] errors,
-        float[] gradients, float learningRate)
-    {
-        Array.Clear(errors, CurrentLayerErrorOffset, NumInputs);
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
-
-        for (var c = 0; c < InputChannels; c++)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                {
-                    var outputIndex = y * OutputWidth + x + c * outputChannelOffset;
-
-                    var max = float.MinValue;
-                    var maxIndex = -1;
-
-                    // Find max position within pool window
-                    for (var ky = 0; ky < PoolSize; ky++)
-                        for (var kx = 0; kx < PoolSize; kx++)
-                        {
-                            var oldX = x * PoolSize + kx;
-                            var oldY = y * PoolSize + ky;
-                            var inputIndex = oldY * InputWidth + oldX + c * inputChannelOffset;
-
-                            if (activations[ActivationInputOffset + inputIndex] > max)
-                            {
-                                max = activations[ActivationInputOffset + inputIndex];
-                                maxIndex = inputIndex;
-                            }
-                        }
-
-                    if (maxIndex >= 0)
-                        // Propagate error to the max position only
-                        errors[CurrentLayerErrorOffset + maxIndex] = errors[NextLayerErrorOffset + outputIndex];
-                }
-    }
-
-    public void AccumulateGradients(float[][] gradients, float learningRate)
-    {
-    }
 
     public void Forward(NetworkAccelerator accelerator)
     {
@@ -259,15 +162,6 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         if (maxIndex >= 0)
             // Propagate error to the max position only
             errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
-    }
-    public static void GradientAccumulationKernelImpl(
-        Index1D index,
-        NetworkData networkData,
-        LayerData layerData,
-        ArrayView<float> parameters,
-        ArrayView<float> gradients)
-    {
-
     }
 
     public void AccumulateGradients(NetworkAccelerator accelerator)

@@ -1,5 +1,6 @@
 using ILGPU.Runtime;
 using ILGPU;
+using ILGPU.Runtime.Cuda;
 using vcortex.Accelerated;
 
 namespace vcortex.Layers.Convolution;
@@ -47,24 +48,9 @@ public class KernelConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
 
-    LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            NumKernels = NumKernels,
-            InputChannels = InputChannels,
-            KernelSize = KernelSize,
-            OutputChannels = OutputChannels,
-        };
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0);
+
     }
 
     public void Connect(ConvolutionInputConfig config)
@@ -82,24 +68,9 @@ public class KernelConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = NumInputs;
         GradientOffset = 0;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            NumKernels = NumKernels,
-            InputChannels = InputChannels,
-            KernelSize = KernelSize,
-            OutputChannels = OutputChannels,
-        };
+
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0);
     }
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
@@ -117,96 +88,8 @@ public class KernelConvolutionLayer : IConvolutionalLayer
 
         accelerator.Buffers.Parameters.View.SubView(LayerData.ParameterOffset, ParameterCount).CopyFromCPU(parameters);
     }
-
-    public void Forward(float[] activations)
-    {
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
-
-        for (var k = 0; k < NumKernels; k++) // Iterate over each kernel (output channel)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                    // Accumulate convolutions across all input channels e.g (R, G, B)
-                    for (var ic = 0; ic < InputChannels; ic++)
-                    {
-                        var outputIndex = y * OutputWidth + x + (k * InputChannels + ic) * outputChannelOffset;
-                        float sum = 0;
-
-                        var kernelOffset = ParameterOffset + (k * InputChannels + ic) * KernelSize * KernelSize; // Kernel per input channel
-
-                        for (var j = 0; j < KernelSize * KernelSize; j++)
-                        {
-                            var kernelY = j / KernelSize;
-                            var kernelX = j % KernelSize;
-
-                            var inputY = y + kernelY;
-                            var inputX = x + kernelX;
-
-                            var pixelIndex = inputY * InputWidth + inputX + ic * inputChannelOffset;
-                            sum += activations[ActivationInputOffset + pixelIndex] * Parameters[kernelOffset + j];
-                        }
-
-                        activations[ActivationOutputOffset + outputIndex] = sum;
-                    }
-    }
-
-    public void Backward(float[] activations, float[] errors,
-        float[] gradients, float learningRate)
-    {
-        Array.Clear(errors, CurrentLayerErrorOffset, NumInputs);
-
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
-
-        for (var k = 0; k < NumKernels; k++) // For each kernel (output channel)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                    for (var ic = 0; ic < InputChannels; ic++)
-                    {
-                        var outputIndex = y * OutputWidth + x + (k * InputChannels + ic) * outputChannelOffset;
-                        var error = errors[NextLayerErrorOffset + outputIndex];
-
-                        var kernelOffset = ParameterOffset + KernelSize * KernelSize * (k * InputChannels + ic); // Kernel per input channel
-
-                        for (var j = 0; j < KernelSize * KernelSize; j++)
-                        {
-                            var kernelY = j / KernelSize;
-                            var kernelX = j % KernelSize;
-
-                            var inputY = y + kernelY;
-                            var inputX = x + kernelX;
-
-                            var pixelIndex = inputY * InputWidth + inputX + ic * inputChannelOffset;
-
-                            // Accumulate the gradient for kernel updates
-                            gradients[GradientOffset + (k * InputChannels + ic) * KernelSize * KernelSize + j] = error * activations[ActivationInputOffset + pixelIndex];
-
-                            // Propagate the error to the current layer
-                            errors[CurrentLayerErrorOffset + pixelIndex] += error * Parameters[kernelOffset + j];
-                        }
-                    }
-    }
-
-
-    public void AccumulateGradients(float[][] gradients, float learningRate)
-    {
-        var lr = learningRate / gradients.Length;
-
-        for (var i = 0; i < OutputChannels; i++)
-        {
-            var kernelOffset = ParameterOffset + KernelSize * KernelSize * i;
-            for (var j = 0; j < KernelSize * KernelSize; j++)
-            {
-                var gradientIndex = i * KernelSize + j;
-
-                var kernelGradient = 0.0f;
-                foreach (var gradient in gradients) kernelGradient += gradient[GradientOffset + gradientIndex];
-
-                Parameters[kernelOffset + j] -= lr * kernelGradient;
-            }
-        }
-    }
-
+    
+    
     public void Forward(NetworkAccelerator accelerator)
     {
         ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumKernels * LayerData.OutputHeight * LayerData.OutputWidth * LayerData.InputChannels, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
@@ -333,15 +216,15 @@ public class KernelConvolutionLayer : IConvolutionalLayer
         kernelGradient /= batchSize;
 
         // Update the first and second moment estimates
-        firstMoment[gradientIndex] = layerData.Beta1 * firstMoment[gradientIndex] + (1 - layerData.Beta1) * kernelGradient;
-        secondMoment[gradientIndex] = layerData.Beta2 * secondMoment[gradientIndex] + (1 - layerData.Beta2) * kernelGradient * kernelGradient;
+        firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * kernelGradient;
+        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * kernelGradient * kernelGradient;
 
         // Bias correction for the moments
-        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
-        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+        var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
+        var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
         
         // Average the gradient and apply the weight update
-        parameters[kernelOffset + kernelIndex] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + layerData.Epsilon);
+        parameters[kernelOffset + kernelIndex] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
     }
 
     public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel { get; private set; }

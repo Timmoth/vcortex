@@ -49,22 +49,9 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            OutputChannels = OutputChannels,
-        };
+
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
     }
 
     public void Connect(ConvolutionInputConfig config)
@@ -82,52 +69,9 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         NextLayerErrorOffset = NumInputs;
         GradientOffset = 0;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            OutputChannels = OutputChannels,
-        };
-    }
-    public void Forward(float[] activations)
-    {
-        throw new NotImplementedException();
-    }
 
-    public void Forward(float[] inputs, float[] outputs)
-    {
-        for (var i = 0; i < NumOutputs; i++)
-            // Apply ReLU activation
-            outputs[i] = XMath.Max(0, inputs[i]);
-    }
-    public void Backward(float[] activations, float[] errors, float[] gradients, float learningRate)
-    {
-        throw new NotImplementedException();
-    }
-    public void Backward(float[] inputs, float[] outputs, float[] currentLayerErrors, float[] nextLayerErrors,
-        float[] gradients,
-        float learningRate)
-    {
-        Array.Clear(currentLayerErrors, 0, currentLayerErrors.Length);
-
-        for (var i = 0; i < NumOutputs; i++)
-            // Backpropagate only for positive outputs since ReLU's gradient is 0 for inputs < 0
-            currentLayerErrors[i] = inputs[i] > 0 ? nextLayerErrors[i] : 0;
-    }
-
-    
-    public void AccumulateGradients(float[][] gradients, float learningRate)
-    {
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
     }
 
     public void Forward(NetworkAccelerator accelerator)
@@ -169,8 +113,10 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var currentErrorOffset = batch * networkData.ErrorCount + layerData.CurrentLayerErrorOffset;
         var nextErrorOffset = batch * networkData.ErrorCount + layerData.NextLayerErrorOffset;
-        
-        errors[currentErrorOffset + outputIndex] = activations[activationInputOffset + outputIndex] > 0 ? errors[nextErrorOffset + outputIndex] : 0;
+
+        float activationValue = activations[activationInputOffset + outputIndex];
+        errors[currentErrorOffset + outputIndex] = (activationValue > 1e-6f) ? errors[nextErrorOffset + outputIndex] : 0;
+        //errors[currentErrorOffset + outputIndex] = errors[nextErrorOffset + outputIndex];
     }
 
     public void AccumulateGradients(NetworkAccelerator accelerator)

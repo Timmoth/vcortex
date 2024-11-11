@@ -26,61 +26,6 @@ public class SoftmaxConnectedLayer : IConnectedLayer
     public int ParameterOffset { get; private set; }
     public float[] Parameters { get; set; }
 
-    public void Backward(float[] activations, float[] errors,
-        float[] gradients,
-        float learningRate)
-    {
-        Array.Clear(errors, CurrentLayerErrorOffset, NumInputs);
-
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            var delta = errors[NextLayerErrorOffset + i]; // Assuming errors are gradients wrt softmax outputs
-            var weightOffset = ParameterOffset + NumInputs * i;
-
-            for (var j = 0; j < NumInputs; j++)
-            {
-                errors[CurrentLayerErrorOffset + j] += delta * Parameters[weightOffset + j];
-                gradients[GradientOffset + i * NumInputs + j] = delta * activations[ActivationInputOffset + j];
-            }
-
-            gradients[GradientOffset + BiasOffset + i] = delta;
-        }
-    }
-
-    public void AccumulateGradients(float[][] gradients, float learningRate)
-    {
-        // Number of samples in the batch
-        var lr = learningRate / gradients.Length;
-
-        // Loop over each output neuron
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            // Update the weights for this neuron
-            var weightOffset = ParameterOffset + NumInputs * i;
-
-            // Accumulate weight gradients
-            for (var j = 0; j < NumInputs; j++)
-            {
-                var gradientIndex = i * NumInputs + j;
-
-                // Accumulate the weight gradients across the batch
-                var weightGradient = 0.0f;
-                foreach (var gradient in gradients) weightGradient += gradient[GradientOffset + gradientIndex];
-
-                // Average the gradient and apply the weight update
-                Parameters[weightOffset + j] -= lr * weightGradient;
-            }
-
-            // Accumulate and average the bias gradients
-            var biasGradient = 0.0f;
-            foreach (var gradient in
-                     gradients) biasGradient += gradient[GradientOffset + BiasOffset + i]; // Assuming BiasOffset is correct
-
-            // Average the bias gradient and apply the update
-            Parameters[ParameterOffset + BiasOffset + i] -= lr * biasGradient;
-        }
-    }
-
     public void Connect(ILayer prevLayer)
     {
         NumInputs = prevLayer.NumOutputs;
@@ -94,17 +39,9 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            BiasOffset = BiasOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs
-        };
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     }
 
     public void Connect(ConnectedInputConfig config)
@@ -120,17 +57,9 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         NextLayerErrorOffset = config.NumInputs;
         GradientOffset = 0;
 
-        LayerData = new LayerData()
-        {
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            BiasOffset = BiasOffset,
-            GradientOffset = GradientOffset,
-            NumInputs = NumInputs,
-            NumOutputs = NumOutputs
-        };
+        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     }
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
@@ -151,61 +80,6 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
         accelerator.Buffers.Parameters.View.SubView(LayerData.ParameterOffset, ParameterCount).CopyFromCPU(parameters);
     }
-
-    public void Forward(float[] activations)
-    {
-        // Calculate the raw scores for each output
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            var sum = Parameters[ParameterOffset + BiasOffset + i];
-            var weightsOffset = ParameterOffset + NumInputs * i;
-            for (var j = 0; j < NumInputs; j++) sum += activations[ActivationInputOffset + j] * Parameters[weightsOffset + j];
-
-            activations[ActivationOutputOffset + i] = sum;
-        }
-
-        // Apply stable softmax to the output scores
-        // Find the max value in outputs for numerical stability
-        var maxVal = activations[ActivationOutputOffset];
-        for (var i = 1; i < NumOutputs; i++)
-            if (activations[ActivationOutputOffset + i] > maxVal)
-                maxVal = activations[ActivationOutputOffset + i];
-
-        // Calculate exponentials and the sum of exponentials
-        float sumExp = 0;
-        for (var i = 0; i < NumOutputs; i++)
-        {
-            // Apply stabilized exponentiation
-            activations[ActivationOutputOffset + i] = XMath.Exp(activations[ActivationOutputOffset + i] - maxVal);
-
-            // Check for infinity, indicating overflow
-            if (float.IsInfinity(activations[ActivationOutputOffset + i]))
-                throw new OverflowException($"Exp overflow detected in output at index {i}");
-
-            sumExp += activations[ActivationOutputOffset + i];
-        }
-
-        // If sumExp is zero or not a valid number, return a uniform distribution
-        if (sumExp <= 0 || float.IsNaN(sumExp) || float.IsInfinity(sumExp))
-        {
-            var uniformProb = 1.0f / NumOutputs;
-            for (var i = 0; i < NumOutputs; i++) activations[ActivationOutputOffset + i] = uniformProb;
-        }
-        else
-        {
-            // Normalize to get probabilities
-            for (var i = 0; i < NumOutputs; i++)
-            {
-                activations[ActivationOutputOffset + i] /= sumExp;
-
-                // Check for NaN, which indicates a division by zero or an invalid operation
-                if (float.IsNaN(activations[ActivationOutputOffset + i]))
-                    throw new ArithmeticException($"NaN detected in softmax output at index {i}");
-            }
-        }
-
-    }
-
     public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel1 { get; private set; }
     public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel2 { get; private set; }
 
@@ -364,7 +238,6 @@ ArrayView<float> activations)
 
         // Loop over each neuron in the output layer
         var delta = errors[nextErrorOffset + interBatchIndex]; // Assuming errors are gradients wrt softmax outputs
-        var weightOffset = layerData.ParameterOffset + layerData.NumInputs * interBatchIndex;
 
         gradients[gradientOffset + layerData.BiasOffset + interBatchIndex] = delta;
     }
@@ -405,15 +278,15 @@ ArrayView<float> activations)
             weightGradient /= networkData.BatchSize; // Take the mean over the batch
             
             // Update the first and second moment estimates
-            firstMoment[gradientIndex] = layerData.Beta1 * firstMoment[gradientIndex] + (1 - layerData.Beta1) * weightGradient;
-            secondMoment[gradientIndex] = layerData.Beta2 * secondMoment[gradientIndex] + (1 - layerData.Beta2) * weightGradient * weightGradient;
+            firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * weightGradient;
+            secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * weightGradient * weightGradient;
 
             // Bias correction for the moments
-            var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
-            var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+            var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
+            var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
         
             // Average the gradient and apply the weight update
-            parameters[weightOffset + j] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + layerData.Epsilon);
+            parameters[weightOffset + j] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
         }
 
         var gradientIndex2 = layerData.GradientOffset + layerData.BiasOffset + interBatchIndex;
@@ -427,15 +300,15 @@ ArrayView<float> activations)
         biasGradient /= networkData.BatchSize; // Take the mean over the batch
         
         // Update the first and second moment estimates
-        firstMoment[gradientIndex2] = layerData.Beta1 * firstMoment[gradientIndex2] + (1 - layerData.Beta1) * biasGradient;
-        secondMoment[gradientIndex2] = layerData.Beta2 * secondMoment[gradientIndex2] + (1 - layerData.Beta2) * biasGradient * biasGradient;
+        firstMoment[gradientIndex2] = networkData.Beta1 * firstMoment[gradientIndex2] + (1 - networkData.Beta1) * biasGradient;
+        secondMoment[gradientIndex2] = networkData.Beta2 * secondMoment[gradientIndex2] + (1 - networkData.Beta2) * biasGradient * biasGradient;
 
         // Bias correction for the moments
-        var mHat2 = firstMoment[gradientIndex2] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
-        var vHat2 = secondMoment[gradientIndex2] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+        var mHat2 = firstMoment[gradientIndex2] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
+        var vHat2 = secondMoment[gradientIndex2] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
         
         // Average the gradient and apply the weight update
-        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= networkData.LearningRate * mHat2 / (MathF.Sqrt(vHat2) + layerData.Epsilon);
+        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= networkData.LearningRate * mHat2 / (MathF.Sqrt(vHat2) + networkData.Epsilon);
     }
 
     public LayerData LayerData { get; set; }

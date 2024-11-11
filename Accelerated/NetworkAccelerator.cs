@@ -160,17 +160,10 @@ public class NetworkAccelerator : IDisposable
     {
             var stopwatch = Stopwatch.StartNew();
 
-            foreach (var layer in Network._layers)
-            {
-                layer.LayerData = layer.LayerData with
-                {
-                    Beta1  = 0.9f,
-                    Beta2   = 0.999f,
-                    Epsilon    = 1e-8f,
-                    Timestep = layer.LayerData.Timestep + 1
-                };
-            }
-            var inputLayer = Network._layers[0];
+            Network.NetworkData = new NetworkData(Network.NetworkData.LearningRate, Network.NetworkData.ActivationCount, Network.NetworkData.ActivationCount, Network.NetworkData.GradientCount, Network.NetworkData.BatchSize, 0.9f, 0.999f, 1e-8f,
+                Network.NetworkData.Timestep + 1);
+
+        var inputLayer = Network._layers[0];
             var outputLayer = Network._layers[^1];
         
             for (int i = 0; i < batch.Count; i++)

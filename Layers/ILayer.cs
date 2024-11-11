@@ -20,17 +20,10 @@ public interface ILayer
     public int ParameterOffset { get; }
     public float[] Parameters { get; set; }
 
-    public void Forward(float[] activations);
-
     public virtual void FillRandom(NetworkAccelerator accelerator)
     {
     }
-
-    public void Backward(float[] activations, float[] errors,
-        float[] gradients, float learningRate);
-
-    public void AccumulateGradients(float[][] gradients, float learningRate);
-
+    
     public void Forward(NetworkAccelerator accelerator);
     public void Backward(NetworkAccelerator accelerator);
     public void AccumulateGradients(NetworkAccelerator accelerator);

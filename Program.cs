@@ -28,7 +28,7 @@ internal class Program
             TrainPath = "../../../mnist_fashion/train.csv",
             TestPath = "../../../mnist_fashion/test.csv",
             Outputs = 10,
-            Epochs = 20,
+            Epochs = 10,
             LearningRate = 0.001f,
             InputDateType = InputDateType.Csv,
             InputConfig = new ConvolutionInputConfig
@@ -70,24 +70,27 @@ internal class Program
         //    .Build();
 
         var net = new NetworkBuilder(trainConfig.InputConfig)
-            .Add(new KernelConvolutionLayer(32))
-            .Add(new ReLUConvolutionLayer())
+            .Add(new KernelConvolutionLayer(16))
+            //.Add(new ReLUConvolutionLayer())
+            .Add(new MaxPoolingConvolutionLayer(2))
+            .Add(new KernelConvolutionLayer(16))
+            //.Add(new ReLUConvolutionLayer())
             .Add(new MaxPoolingConvolutionLayer(2))
             //.Add(new ReluConnectedLayer(64))
-            .Add(new SigmoidConnectedLayer(256))
+            .Add(new SigmoidConnectedLayer(128))
             .Add(new SigmoidConnectedLayer(64))
             .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
             .Build();
 
-        //
-        // var net = new NetworkBuilder(new ConnectedInputConfig()
-        // {
-        //     NumInputs = 28 * 28
-        // })
-        //     .Add(new SigmoidConnectedLayer(256))
-        //     .Add(new SigmoidConnectedLayer(64))
-        //     .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
-        //     .Build();
+
+        //var net = new NetworkBuilder(new ConnectedInputConfig()
+        //{
+        //    NumInputs = 28 * 28
+        //})
+        //    .Add(new SigmoidConnectedLayer(64))
+        //    .Add(new SigmoidConnectedLayer(64))
+        //    .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
+        //    .Build();
 
         Console.WriteLine($"parameters: {net.ParameterCount}");
         Console.WriteLine($"activations: {net.ActivationCount}");
