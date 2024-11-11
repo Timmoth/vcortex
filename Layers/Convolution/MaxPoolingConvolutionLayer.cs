@@ -173,25 +173,18 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
 
     public void Forward(NetworkAccelerator accelerator)
     {
-        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
+        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData,accelerator.Buffers.Activations.View);
     }
 
     public void Backward(NetworkAccelerator accelerator)
     {
-        for (int i = 0; i < accelerator.Network.NetworkData.BatchSize; i++)
-        {
-            accelerator.Buffers.Errors.View.SubView(accelerator.Network.NetworkData.ErrorCount * i + LayerData.CurrentLayerErrorOffset, LayerData.NumInputs).MemSetToZero();
-        }
-
-        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
-            accelerator.Buffers.Errors.View);
+        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Errors.View);
     }
 
     public static void ForwardKernelImpl(
      Index1D index,
      NetworkData networkData,
      LayerData layerData,
-     ArrayView<float> parameters,
      ArrayView<float> activations)
     {
         // index = batches * InputChannels * height * width
@@ -227,9 +220,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
-        ArrayView<float> parameters,
         ArrayView<float> activations,
-        ArrayView<float> gradients,
         ArrayView<float> errors)
     {
         int batch = index / (layerData.InputChannels * layerData.OutputHeight * layerData.OutputWidth);
@@ -283,28 +274,22 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
 
     }
 
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel { get; private set; }
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> ForwardKernel { get; private set; }
 
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>,
         ArrayView<float>> BackwardKernel
     { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> GradientAccumulationKernel { get; private set; }
-
-
+    
     public void CompileKernels(Accelerator accelerator)
     {
         ForwardKernel =
-            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
                 ForwardKernelImpl);
         BackwardKernel =
             accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
-        GradientAccumulationKernel =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(GradientAccumulationKernelImpl);
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
+
     }
-    public LayerData LayerData { get; private set; }
+    public LayerData LayerData { get; set; }
 
 }

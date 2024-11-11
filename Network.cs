@@ -17,8 +17,8 @@ public class Network
         _layers = layers;
         NetworkData = new NetworkData()
         {
-            LearningRate = 0.02f,
-            BatchSize = 150,
+            LearningRate = 0.01f,
+            BatchSize = 200,
             ActivationCount = ActivationCount,
             ErrorCount = ActivationCount,
             GradientCount = GradientCount

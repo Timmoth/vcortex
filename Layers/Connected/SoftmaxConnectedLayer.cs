@@ -214,7 +214,7 @@ public class SoftmaxConnectedLayer : IConnectedLayer
     public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> BackwardKernel2
     { get; private set; }
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> GradientAccumulationKernel
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>> GradientAccumulationKernel
     { get; private set; }
 
 
@@ -240,7 +240,7 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
         GradientAccumulationKernel =
             accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(GradientAccumulationKernelImpl);
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>>(GradientAccumulationKernelImpl);
     }
 
     public void Forward(NetworkAccelerator accelerator)
@@ -315,11 +315,6 @@ ArrayView<float> activations)
 
     public void Backward(NetworkAccelerator accelerator)
     {
-        for (int i = 0; i < accelerator.Network.NetworkData.BatchSize; i++)
-        {
-            accelerator.Buffers.Errors.View.SubView(accelerator.Network.NetworkData.ErrorCount * i + LayerData.CurrentLayerErrorOffset, LayerData.NumInputs).MemSetToZero();
-        }
-
         BackwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
             accelerator.Buffers.Errors.View);
         BackwardKernel2(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
@@ -335,7 +330,7 @@ ArrayView<float> activations)
         ArrayView<float> gradients,
         ArrayView<float> errors)
     {
-        int batchIndex = index / (layerData.NumInputs * layerData.NumInputs);         // First dimension (a)
+        int batchIndex = index / (layerData.NumInputs * layerData.NumOutputs);         // First dimension (a)
         int outputIndex = (index / layerData.NumInputs) % layerData.NumOutputs;         // Second dimension (b)
         int inputIndex = index % layerData.NumInputs;
         var activationInputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationInputOffset;
@@ -375,19 +370,20 @@ ArrayView<float> activations)
 
     public void AccumulateGradients(NetworkAccelerator accelerator)
     {
-        GradientAccumulationKernel(LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View);
+        GradientAccumulationKernel(LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View, accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
     }
     public static void GradientAccumulationKernelImpl(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
         ArrayView<float> parameters,
-        ArrayView<float> gradients)
+        ArrayView<float> gradients,
+        ArrayView<float> firstMoment,
+        ArrayView<float> secondMoment)
     {
         // Number of samples in the batch
         var batchSize = networkData.BatchSize;
-        var lr = networkData.LearningRate / batchSize; // Scale learning rate by batch size for averaging
-        var interBatchIndex = index % layerData.NumOutputs;
+        var interBatchIndex = index;
 
         // Loop over each output neuron
         // Update the weights for this neuron
@@ -396,29 +392,51 @@ ArrayView<float> activations)
         // Accumulate weight gradients
         for (var j = 0; j < layerData.NumInputs; j++)
         {
-            var gradientIndex = interBatchIndex * layerData.NumInputs + j;
+            var gradientIndex = layerData.GradientOffset + interBatchIndex * layerData.NumInputs + j;
 
             // Accumulate the weight gradients across the batch
             var weightGradient = 0.0f;
             for (int i = 0; i < batchSize; i++)
             {
-                weightGradient += gradients[networkData.GradientCount * i + layerData.GradientOffset + gradientIndex];
+                weightGradient += gradients[networkData.GradientCount * i  + gradientIndex];
             }
+            
+            weightGradient /= networkData.BatchSize; // Take the mean over the batch
+            
+            // Update the first and second moment estimates
+            firstMoment[gradientIndex] = layerData.Beta1 * firstMoment[gradientIndex] + (1 - layerData.Beta1) * weightGradient;
+            secondMoment[gradientIndex] = layerData.Beta2 * secondMoment[gradientIndex] + (1 - layerData.Beta2) * weightGradient * weightGradient;
+
+            // Bias correction for the moments
+            var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
+            var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+        
             // Average the gradient and apply the weight update
-            parameters[weightOffset + j] -= lr * weightGradient;
+            parameters[weightOffset + j] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + layerData.Epsilon);
         }
 
+        var gradientIndex2 = layerData.GradientOffset + layerData.BiasOffset + interBatchIndex;
         // Accumulate and average the bias gradients
         var biasGradient = 0.0f;
         for (int i = 0; i < batchSize; i++)
         {
-            biasGradient += gradients[networkData.GradientCount * i + layerData.GradientOffset + layerData.BiasOffset + interBatchIndex];
+            biasGradient += gradients[networkData.GradientCount * i + gradientIndex2];
         }
 
-        // Average the bias gradient and apply the update
-        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= lr * biasGradient;
+        biasGradient /= networkData.BatchSize; // Take the mean over the batch
+        
+        // Update the first and second moment estimates
+        firstMoment[gradientIndex2] = layerData.Beta1 * firstMoment[gradientIndex2] + (1 - layerData.Beta1) * biasGradient;
+        secondMoment[gradientIndex2] = layerData.Beta2 * secondMoment[gradientIndex2] + (1 - layerData.Beta2) * biasGradient * biasGradient;
+
+        // Bias correction for the moments
+        var mHat2 = firstMoment[gradientIndex2] / (1 - MathF.Pow(layerData.Beta1, layerData.Timestep));
+        var vHat2 = secondMoment[gradientIndex2] / (1 - MathF.Pow(layerData.Beta2, layerData.Timestep));
+        
+        // Average the gradient and apply the weight update
+        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= networkData.LearningRate * mHat2 / (MathF.Sqrt(vHat2) + layerData.Epsilon);
     }
 
-    public LayerData LayerData { get; private set; }
+    public LayerData LayerData { get; set; }
 
 }

@@ -13,6 +13,7 @@ public static class Trainer
         float learningRate)
     {
         Console.WriteLine("Training network");
+        accelerator.Network.NetworkData.LearningRate = learningRate;
 
         // Forward Pass
         var batchSize = accelerator.Network.NetworkData.BatchSize;
@@ -32,7 +33,7 @@ public static class Trainer
                 var currentBatch = shuffledData.Skip(batchStart).Take(batchSize).ToList();
 
                 // Perform forward and backward passes and get the batch error
-                var batchError = accelerator.Train(currentBatch, learningRate);
+                var batchError = accelerator.Train(currentBatch);
 
                 // Accumulate batch error
                 epochError += batchError;

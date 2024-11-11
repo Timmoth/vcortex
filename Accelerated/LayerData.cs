@@ -20,4 +20,8 @@ public struct LayerData
     public int KernelSize { get; set; }
     public int OutputChannels { get; set; }
     public int PoolSize { get; set; }
+    public float Beta1 { get; set; }
+    public float Beta2 { get; set; }
+    public float Epsilon { get; set; }
+    public int Timestep { get; set; } 
 }

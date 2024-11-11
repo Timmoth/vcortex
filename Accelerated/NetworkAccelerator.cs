@@ -1,4 +1,7 @@
-﻿using ILGPU;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using ILGPU;
 using ILGPU.Runtime;
 using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
@@ -13,6 +16,8 @@ public class NetworkAccelerator : IDisposable
 
     public Network Network;
     public NetworkAcceleratorBuffers Buffers;
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> LoadInputsKernel { get; private set; }
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>> LoadOutputsKernel { get; private set; }
 
     public NetworkAccelerator(Network network)
     {
@@ -42,16 +47,32 @@ public class NetworkAccelerator : IDisposable
             accelerator = context.CreateCPUAccelerator(0);
         }
 
-
-
-
         Buffers = new NetworkAcceleratorBuffers(accelerator, network);
 
         foreach (var layer in network._layers)
         {
             layer.CompileKernels(accelerator);
         }
+        
+        LoadInputsKernel =
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+                LoadInputs);        
+        
+        LoadOutputsKernel =
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>>(
+                LoadOutputs);
+        
+        var inputLayer = Network._layers[0];
+        var inputCount = inputLayer.LayerData.NumInputs * Network.NetworkData.BatchSize;
+        flattenedInputs = new float[inputCount];
+        
+        var outputLayer = Network._layers[^1];
+        var outputCount = outputLayer.LayerData.NumOutputs * Network.NetworkData.BatchSize;
+        flattenedExpectedOutputs = new float[outputCount];
     }
+    
+    private readonly float[] flattenedInputs;
+    private readonly float[] flattenedExpectedOutputs;
 
     public void Dispose()
     {
@@ -98,53 +119,98 @@ public class NetworkAccelerator : IDisposable
 
         return outputs;
     }
-
-    public float Train(List<(float[] inputs, float[] expectedOutputs)> batch, float learningRate = 0.02f)
+    
+    
+    public static void LoadInputs(
+        Index1D index,
+        NetworkData networkData,
+        LayerData layerData,
+        ArrayView<float> inputs,
+        ArrayView<float> activations)
     {
-        for (int i = 0; i < batch.Count; i++)
-        {
-            var inputs = batch[i].inputs;
-            Buffers.Activations.View.SubView(Network.NetworkData.ActivationCount * i, inputs.Length).CopyFromCPU(inputs);
-        }
+        // Number of samples in the batch
+        var batchIndex = index / layerData.NumInputs;
+        var inputIndex = index % layerData.NumInputs;
 
-        foreach (var layer in Network._layers)
-        {
-            layer.Forward(this);
-        }
+        activations[networkData.ActivationCount * batchIndex + inputIndex] = inputs[layerData.NumInputs * batchIndex + inputIndex];
+    }
+    public static void LoadOutputs(
+        Index1D index,
+        NetworkData networkData,
+        LayerData layerData,
+        ArrayView<float> outputs,
+        ArrayView<float> activations,
+        ArrayView<float> errors)
+    {
+        // Number of samples in the batch
+        var batchIndex = index / layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
+        var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
+        var nextErrorOffset = batchIndex * networkData.ErrorCount + layerData.NextLayerErrorOffset;
 
-        var finalLayer = Network._layers[^1];
-        var actualOutputs = new float[finalLayer.NumOutputs];
-        var errors = new float[finalLayer.NumOutputs];
+        var expected = outputs[layerData.NumOutputs * batchIndex + outputIndex];
+        var actual = activations[activationOutputOffset + outputIndex];
+        var error = actual - expected;
 
-        float sampleError = 0;
+        outputs[layerData.NumOutputs * batchIndex + outputIndex] = error * error;
+        errors[nextErrorOffset + outputIndex] = error;
+    }
 
-        for (int i = 0; i < batch.Count; i++)
-        {
-            var expectedOutputs = batch[i].expectedOutputs;
+    public float Train(List<(float[] inputs, float[] expectedOutputs)> batch)
+    {
+            var stopwatch = Stopwatch.StartNew();
 
-            Buffers.Activations.View.SubView(Network.NetworkData.ActivationCount * i + finalLayer.ActivationOutputOffset, finalLayer.NumOutputs).CopyToCPU(actualOutputs);
-
-            for (var j = 0; j < actualOutputs.Length; j++)
+            foreach (var layer in Network._layers)
             {
-                var e = errors[j] = (actualOutputs[j] - expectedOutputs[j]);
-                sampleError += e * e; // Sum of squared errors
+                layer.LayerData = layer.LayerData with
+                {
+                    Beta1  = 0.9f,
+                    Beta2   = 0.999f,
+                    Epsilon    = 1e-8f,
+                    Timestep = layer.LayerData.Timestep + 1
+                };
+            }
+            var inputLayer = Network._layers[0];
+            var outputLayer = Network._layers[^1];
+        
+            for (int i = 0; i < batch.Count; i++)
+            {
+                Array.Copy(batch[i].inputs, 0, flattenedInputs, i * inputLayer.LayerData.NumInputs, inputLayer.LayerData.NumInputs);
+            }
+            
+            Buffers.Inputs.View.CopyFromCPU(flattenedInputs);
+            LoadInputsKernel(flattenedInputs.Length, Network.NetworkData, inputLayer.LayerData, Buffers.Inputs.View, Buffers.Activations.View);
+            foreach (var layer in Network._layers)
+            {
+                layer.Forward(this);
+            }
+            var finalLayer = Network._layers[^1];
+            
+            for (int i = 0; i < batch.Count; i++)
+            {
+                Array.Copy(batch[i].expectedOutputs, 0, flattenedExpectedOutputs, i * outputLayer.LayerData.NumOutputs, outputLayer.LayerData.NumOutputs);
             }
 
-            Buffers.Errors.View.SubView(Network.NetworkData.ErrorCount * i + finalLayer.NextLayerErrorOffset, finalLayer.NumOutputs).CopyFromCPU(errors);
-        }
+            Buffers.Errors.View.MemSetToZero();
+            Buffers.Outputs.View.CopyFromCPU(flattenedExpectedOutputs);
+            LoadOutputsKernel(Network.NetworkData.BatchSize * outputLayer.LayerData.NumOutputs, Network.NetworkData, outputLayer.LayerData, Buffers.Outputs.View, Buffers.Activations.View, Buffers.Errors.View);
+            Buffers.Outputs.View.CopyToCPU(flattenedExpectedOutputs);
+            var sampleError = flattenedExpectedOutputs.Sum();
+            
+            // Backward Pass
+            for (var i = Network._layers.Length - 1; i >= 0; i--)
+            {
+                Network._layers[i].Backward(this);
+            }
+            
+            foreach (var layer in Network._layers)
+            {
+                layer.AccumulateGradients(this);
+            }
+            accelerator.Synchronize();
 
-        // Backward Pass
-        for (var i = Network._layers.Length - 1; i >= 0; i--)
-        {
-            Network._layers[i].Backward(this);
-        }
-
-        foreach (var layer in Network._layers)
-        {
-            layer.AccumulateGradients(this);
-        }
-
-        return sampleError / finalLayer.NumOutputs;
-
+            //Console.WriteLine($" final sync: {stopwatch.ElapsedMilliseconds}ms");
+            stopwatch.Restart();
+            return sampleError / finalLayer.NumOutputs;
     }
 }

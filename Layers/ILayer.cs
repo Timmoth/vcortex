@@ -37,6 +37,6 @@ public interface ILayer
 
     public void CompileKernels(Accelerator accelerator);
 
-    public LayerData LayerData { get; }
+    public LayerData LayerData { get; set; }
 
 }
