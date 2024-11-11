@@ -1,5 +1,6 @@
 using ILGPU.Runtime;
 using ILGPU;
+using ILGPU.Algorithms;
 using vcortex.Accelerated;
 
 namespace vcortex.Layers.Convolution;
@@ -107,7 +108,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
     {
         for (var i = 0; i < NumOutputs; i++)
             // Apply ReLU activation
-            outputs[i] = Math.Max(0, inputs[i]);
+            outputs[i] = XMath.Max(0, inputs[i]);
     }
     public void Backward(float[] activations, float[] errors, float[] gradients, float learningRate)
     {
@@ -152,7 +153,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batch * networkData.ActivationCount + layerData.ActivationOutputOffset;
 
-        activations[activationOutputOffset + outputIndex] = Math.Max(0, activations[activationInputOffset + outputIndex]);
+        activations[activationOutputOffset + outputIndex] = XMath.Max(0, activations[activationInputOffset + outputIndex]);
     }
 
     public static void BackwardKernelImpl(

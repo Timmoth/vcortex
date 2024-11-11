@@ -1,6 +1,7 @@
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using ILGPU;
+using ILGPU.Algorithms;
 using ILGPU.IR;
 using ILGPU.Runtime;
 using vcortex.Accelerated;
@@ -138,7 +139,7 @@ public class ReluConnectedLayer : IConnectedLayer
             sum += activations[activationInputOffset + j] * parameters[weightsOffset + j];
         }
 
-        activations[activationOutputOffset + interBatchIndex] = Math.Max(0.0f, sum);
+        activations[activationOutputOffset + interBatchIndex] = XMath.Max(0.0f, sum);
     }
 
     public void Forward(NetworkAccelerator accelerator)
@@ -399,7 +400,7 @@ public class ReluConnectedLayer : IConnectedLayer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Activate(float x)
     {
-        return Math.Max(0.0f, x);
+        return XMath.Max(0.0f, x);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

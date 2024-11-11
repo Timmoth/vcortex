@@ -74,7 +74,7 @@
 
 //        for (var i = 0; i < outputs.Length; i++)
 //        {
-//            outputs[i] = (float)Math.Exp(outputs[i] - maxVal);
+//            outputs[i] =  XMath.Exp(outputs[i] - maxVal);
 //            sumExp += outputs[i];
 //        }
 

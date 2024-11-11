@@ -24,7 +24,7 @@ public class NetworkAccelerator : IDisposable
         Network = network;
         context = Context.Create(b =>
         {
-            b.Default().EnableAlgorithms();
+            b.Default().EnableAlgorithms().Math(MathMode.Fast);
         });
 
         bool useCuda = true;

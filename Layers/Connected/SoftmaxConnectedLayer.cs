@@ -1,6 +1,7 @@
 using ILGPU.Runtime;
 using ILGPU;
 using vcortex.Accelerated;
+using ILGPU.Algorithms;
 
 namespace vcortex.Layers.Connected;
 
@@ -175,7 +176,7 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         for (var i = 0; i < NumOutputs; i++)
         {
             // Apply stabilized exponentiation
-            activations[ActivationOutputOffset + i] = (float)Math.Exp(activations[ActivationOutputOffset + i] - maxVal);
+            activations[ActivationOutputOffset + i] = XMath.Exp(activations[ActivationOutputOffset + i] - maxVal);
 
             // Check for infinity, indicating overflow
             if (float.IsInfinity(activations[ActivationOutputOffset + i]))
@@ -292,7 +293,7 @@ ArrayView<float> activations)
         for (var i = 0; i < layerData.NumOutputs; i++)
         {
             // Apply stabilized exponentiation
-            activations[activationOutputOffset + i] = (float)Math.Exp(activations[activationOutputOffset + i] - maxVal);
+            activations[activationOutputOffset + i] = (float)XMath.Exp(activations[activationOutputOffset + i] - maxVal);
 
             sumExp += activations[activationOutputOffset + i];
         }

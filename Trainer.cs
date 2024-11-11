@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Reflection.Emit;
+using ILGPU.Algorithms;
 using ILGPU.Util;
 using vcortex.Accelerated;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -154,7 +155,7 @@ public static class Trainer
 
         var total = correct + incorrect;
         Console.WriteLine("Correct: {0}/{1} ({2}%) in: {3}ms {4}/s", correct, total,
-            Math.Round(correct / (float)total * 100, 2), stopwatch.ElapsedMilliseconds, Math.Round(total / (float)stopwatch.Elapsed.TotalSeconds));
+            XMath.Round(correct / (float)total * 100, 2), stopwatch.ElapsedMilliseconds, XMath.Round(total / (float)stopwatch.Elapsed.TotalSeconds));
     }
 
     private static bool IsMultiLabelPredictionCorrect(float[] expected, float[] actual, float threshold)

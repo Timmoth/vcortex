@@ -1,6 +1,8 @@
+using System.Numerics;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using ILGPU;
+using ILGPU.Algorithms;
 using ILGPU.IR;
 using ILGPU.Runtime;
 using vcortex.Accelerated;
@@ -139,7 +141,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
         }
 
         // Apply the activation function to the sum and store it in the output
-        activations[activationOutputOffset + interBatchIndex] = 1.0f / (1.0f + (float)Math.Exp(-sum));
+        activations[activationOutputOffset + interBatchIndex] = 1.0f / (1.0f + XMath.Exp(-sum));
     }
 
     public void Forward(NetworkAccelerator accelerator)
@@ -184,8 +186,8 @@ public class SigmoidConnectedLayer : IConnectedLayer
         ArrayView<float> gradients,
         ArrayView<float> errors)
     {
-        int batchIndex = index / (layerData.NumInputs * layerData.NumOutputs);         // First dimension (a)
-        int outputIndex = (index / layerData.NumInputs) % layerData.NumOutputs;         // Second dimension (b)
+        int batchIndex = index / (layerData.NumInputs * layerData.NumOutputs);
+        int outputIndex = (index / layerData.NumInputs) % layerData.NumOutputs;
         int inputIndex = index % layerData.NumInputs;
         var activationInputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
@@ -400,7 +402,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Activate(float x)
     {
-        return 1.0f / (1.0f + (float)Math.Exp(-x));
+        return 1.0f / (1.0f +  XMath.Exp(-x));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,5 +1,6 @@
 using ILGPU.Runtime;
 using ILGPU;
+using ILGPU.Algorithms;
 using vcortex.Accelerated;
 
 namespace vcortex.Layers.Convolution;
@@ -121,7 +122,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
                             var inputIndex = oldY * InputWidth + oldX + c * inputChannelOffset;
 
                             // Here, SIMD could help if PoolSize is large, by comparing multiple input elements at once
-                            max = Math.Max(max, activations[ActivationInputOffset + inputIndex]);
+                            max = XMath.Max(max, activations[ActivationInputOffset + inputIndex]);
                         }
 
                     activations[ActivationOutputOffset + outputIndex] = max;
@@ -209,7 +210,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
                 var oldX = x * layerData.PoolSize + kx;
                 var oldY = y * layerData.PoolSize + ky;
                 var inputIndex = oldY * layerData.InputWidth + oldX + c * inputChannelOffset;
-                max = Math.Max(max, activations[activationInputOffset + inputIndex]);
+                max = XMath.Max(max, activations[activationInputOffset + inputIndex]);
             }
 
         activations[activationOutputOffset + outputIndex] = max;
