@@ -1,4 +1,5 @@
-﻿using vcortex.Layers.Connected;
+﻿using vcortex.Accelerated;
+using vcortex.Layers.Connected;
 using vcortex.Layers.Convolution;
 
 namespace vcortex;
@@ -42,14 +43,14 @@ internal class Program
             TrainPath = "../../../pandas_or_bears/train",
             TestPath = "../../../pandas_or_bears/test",
             Outputs = 2,
-            Epochs = 10,
+            Epochs = 20,
             LearningRate = 0.001f,
             InputDateType = InputDateType.Directory,
             InputConfig = new ConvolutionInputConfig
             {
-                Width = 64,
-                Height = 64,
-                Grayscale = false
+                Width = 32,
+                Height = 32,
+                Grayscale = true
             }
         }
     };
@@ -57,22 +58,47 @@ internal class Program
     private static void Main(string[] args)
     {
         Console.WriteLine("vcortex");
-        var trainConfig = TrainConfigs[1];
+        var trainConfig = TrainConfigs[0];
+
+        //var net = new NetworkBuilder(trainConfig.InputConfig)
+        //    .Add(new KernelConvolutionLayer(32))
+        //    .Add(new LeakyReLUConvolutionLayer())
+        //    .Add(new MaxPoolingConvolutionLayer(2))
+        //    .Add(new LeakyReluConnectedLayer(32))
+        //    .Add(new LeakyReluConnectedLayer(32))
+        //    .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
+        //    .Build();
 
         var net = new NetworkBuilder(trainConfig.InputConfig)
-            .Add(new KernelConvolutionLayer(32))
-            .Add(new LeakyReLUConvolutionLayer())
+            .Add(new KernelConvolutionLayer(12))
+            .Add(new ReLUConvolutionLayer())
             .Add(new MaxPoolingConvolutionLayer(2))
-            .Add(new LeakyReluConnectedLayer(32))
-            .Add(new LeakyReluConnectedLayer(64))
+            .Add(new SigmoidConnectedLayer(128))
             .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
             .Build();
+
+
+        //var net = new NetworkBuilder(new ConnectedInputConfig()
+        //{
+        //    NumInputs = 28 * 28
+        //})
+        //    .Add(new SigmoidConnectedLayer(64))
+        //    .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
+        //    .Build();
+
+        Console.WriteLine($"parameters: {net.ParameterCount}");
+        Console.WriteLine($"activations: {net.ActivationCount}");
 
         var (train, test) = trainConfig.InputDateType == InputDateType.Csv
             ? DataLoader.LoadMNIST(trainConfig)
             : DataLoader.LoadData(trainConfig);
 
-        Trainer.TrainBatched(net, train, trainConfig.Epochs, trainConfig.LearningRate, 16);
-        Trainer.Test(net, test, 0.1f);
+        var accelerator = new NetworkAccelerator(net);
+        accelerator.InitWeights();
+
+        Trainer.TrainAccelerated(accelerator, train, 15, 0.2f);
+
+        //Trainer.TrainBatched(net, train, trainConfig.Epochs, trainConfig.LearningRate, 16);
+        Trainer.Test(accelerator, test, 0.1f);
     }
 }

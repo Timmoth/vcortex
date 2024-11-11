@@ -1,53 +1,45 @@
+using vcortex.Accelerated;
 using vcortex.Layers;
 
 namespace vcortex;
-
-public class LayerData
-{
-    public readonly float[] Errors;
-    public readonly float[] Output;
-
-    public LayerData(ILayer layer)
-    {
-        Output = new float[layer.NumOutputs];
-        Errors = new float[layer.NumInputs];
-    }
-}
-
-public class NetworkData
-{
-    public readonly LayerData[] LayerData;
-
-    public NetworkData(ILayer[] layers)
-    {
-        LayerData = new LayerData[layers.Length];
-        for (var i = 0; i < layers.Length; i++) LayerData[i] = new LayerData(layers[i]);
-    }
-}
 
 public class Network
 {
     public readonly ILayer[] _layers;
 
+    public int ActivationCount => _layers.Sum(l => l.NumOutputs) + _layers[0].NumInputs;
+    public int GradientCount => _layers.Sum(l => l.GradientCount);
+    public int ParameterCount => _layers.Sum(l => l.ParameterCount);
+
+    public NetworkData NetworkData;
     public Network(ILayer[] layers)
     {
         _layers = layers;
+        NetworkData = new NetworkData()
+        {
+            LearningRate = 0.02f,
+            BatchSize = 150,
+            ActivationCount = ActivationCount,
+            ErrorCount = ActivationCount,
+            GradientCount = GradientCount
+        };
     }
 
     public float[] Predict(float[] inputs)
     {
-        var networkData = new NetworkData(_layers);
+        var activations = new float[ActivationCount];
 
-        _layers[0].Forward(inputs, networkData.LayerData[0].Output);
+        Array.Copy(inputs, activations, inputs.Length);
 
-        for (var index = 1; index < _layers.Length; index++)
-            _layers[index].Forward(networkData.LayerData[index - 1].Output, networkData.LayerData[index].Output);
+        foreach (var t in _layers)
+            t.Forward(activations);
 
-        return networkData.LayerData[^1].Output;
+        var lastLayer = _layers[^1];
+        return activations.AsSpan(lastLayer.ActivationOutputOffset, lastLayer.NumOutputs).ToArray();
     }
 
-    public float Train(List<(float[] inputs, float[] outputs)> trainData, NetworkData[] networkDataArray,
-        float[][][] gradients, float learningRate = 0.02f)
+    public float Train(List<(float[] inputs, float[] outputs)> trainData, float[][] activations, float[][] errors,
+        float[][] gradients, float learningRate = 0.02f)
     {
         var batchSize = trainData.Count;
 
@@ -56,87 +48,78 @@ public class Network
         // Perform forward and backward pass for each batch in parallel
         Parallel.For(0, batchSize, i =>
         {
-            var networkData = networkDataArray[i];
+            var networkData = activations[i];
             var inputs = trainData[i].inputs;
+            var err = errors[i];
             var expectedOutputs = trainData[i].outputs;
-
+            var g = gradients[i];
             // Forward pass
-            _layers[0].Forward(inputs, networkData.LayerData[0].Output);
-            for (var j = 1; j < _layers.Length; j++)
-                _layers[j].Forward(networkData.LayerData[j - 1].Output, networkData.LayerData[j].Output);
+            Array.Copy(inputs, networkData, inputs.Length);
+
+            foreach (var t in _layers)
+                t.Forward(networkData);
 
             // Calculate errors at the output layer for the current sample
-            var finalLayer = networkData.LayerData[^1].Output;
+            var lastLayer = _layers[^1];
+            var finalLayer = networkData.AsSpan(lastLayer.ActivationOutputOffset, lastLayer.NumOutputs).ToArray();
             float sampleError = 0;
-            var errors = new float[_layers[^1].NumOutputs];
 
             for (var j = 0; j < finalLayer.Length; j++)
             {
-                errors[j] = (finalLayer[j] - expectedOutputs[j]);
-                sampleError += errors[j] * errors[j]; // Sum of squared errors
+                var e = err[lastLayer.NextLayerErrorOffset + j] = (finalLayer[j] - expectedOutputs[j]);
+                sampleError += e * e; // Sum of squared errors
             }
 
             sampleErrors[i] = sampleError / expectedOutputs.Length; // Store sample error
 
             // Backward pass for current sample
-            var nextLayerErrors = errors;
             for (var j = _layers.Length - 1; j >= 0; j--)
             {
-                var previousLayerOutput = j > 0 ? networkData.LayerData[j - 1].Output : inputs;
-                _layers[j].Backward(previousLayerOutput, networkData.LayerData[j].Output,
-                    networkData.LayerData[j].Errors, nextLayerErrors, gradients[j][i], learningRate);
-
-                // Update errors for the next layer in the backward pass
-                nextLayerErrors = networkData.LayerData[j].Errors;
+                _layers[j].Backward(networkData,
+                    err, g, learningRate);
             }
         });
 
         // Now accumulate gradients from all samples
         for (var layerIndex = 0; layerIndex < _layers.Length; layerIndex++)
             // Pass the gradients directly to AccumulateGradients
-            _layers[layerIndex].AccumulateGradients(gradients[layerIndex], learningRate);
+            _layers[layerIndex].AccumulateGradients(gradients, learningRate);
 
         // Compute average error for the batch
         var totalError = sampleErrors.Sum();
         return totalError;
     }
 
-    public float Train(float[] inputs, float[] expectedOutputs, NetworkData networkData, float[][] gradients,
+    public float Train(float[] inputs, float[] expectedOutputs, float[] activations, float[] errors, float[] gradients,
         float learningRate = 0.02f)
     {
         // Forward Pass
-        _layers[0].Forward(inputs, networkData.LayerData[0].Output);
-        for (var i = 1; i < _layers.Length; i++)
-            _layers[i].Forward(networkData.LayerData[i - 1].Output, networkData.LayerData[i].Output);
+        Array.Copy(inputs, activations, inputs.Length);
+
+        foreach (var t in _layers)
+            t.Forward(activations);
 
         // Calculate Errors at Output Layer
-        var finalLayer = networkData.LayerData[^1].Output;
+        var lastLayer = _layers[^1];
+        var finalLayer = activations.AsSpan(lastLayer.ActivationOutputOffset, lastLayer.NumOutputs).ToArray();
         float sampleError = 0;
-        var errors = new float[_layers[^1].NumOutputs];
 
-        for (var i = 0; i < finalLayer.Length; i++)
+        for (var j = 0; j < finalLayer.Length; j++)
         {
-            errors[i] =finalLayer[i] - expectedOutputs[i];
-            sampleError += errors[i] * errors[i];
+            var e = errors[lastLayer.NextLayerErrorOffset + j] = (finalLayer[j] - expectedOutputs[j]);
+            sampleError += e * e; // Sum of squared errors
         }
 
-
-        var nextLayerErrors = errors;
         // Backward Pass
         for (var i = _layers.Length - 1; i >= 0; i--)
         {
-            var previousLayerOutput = i > 0 ? networkData.LayerData[i - 1].Output : inputs;
-            _layers[i].Backward(previousLayerOutput, networkData.LayerData[i].Output, networkData.LayerData[i].Errors,
-                nextLayerErrors, gradients[i], learningRate);
-
-            // Update errors for the next layer in the backward pass
-            nextLayerErrors = networkData.LayerData[i].Errors;
+            _layers[i].Backward(activations, errors, gradients, learningRate);
         }
 
         for (var i = 0; i < _layers.Length; i++)
             _layers[i].AccumulateGradients(new float[1][]
             {
-                gradients[i]
+                gradients
             }, learningRate);
 
         return sampleError / expectedOutputs.Length;

@@ -101,48 +101,48 @@ public static class DataLoader
         return allImages;
     }
 
-    public static void OutputImageRgb(KernelConvolutionLayer l1, float[] imageData, string prefix)
-    {
-        var inputChannelSize = l1.InputWidth * l1.InputHeight;
-        var img = imageData.AsSpan();
-        SaveImageRgb($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
-            img.Slice(0, inputChannelSize),
-            img.Slice(1 * inputChannelSize, inputChannelSize),
-            img.Slice(2 * inputChannelSize, inputChannelSize));
+    //public static void OutputImageRgb(KernelConvolutionLayer l1, float[] imageData, string prefix)
+    //{
+    //    var inputChannelSize = l1.InputWidth * l1.InputHeight;
+    //    var img = imageData.AsSpan();
+    //    SaveImageRgb($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
+    //        img.Slice(0, inputChannelSize),
+    //        img.Slice(1 * inputChannelSize, inputChannelSize),
+    //        img.Slice(2 * inputChannelSize, inputChannelSize));
 
-        var o = new float[l1.NumOutputs];
-        l1.Forward(imageData, o);
+    //    var o = new float[l1.NumOutputs];
+    //    l1.Forward(imageData, o);
 
-        var offset = 0;
-        var output = o.AsSpan();
-        var channelSize = l1.OutputWidth * l1.OutputHeight;
+    //    var offset = 0;
+    //    var output = o.AsSpan();
+    //    var channelSize = l1.OutputWidth * l1.OutputHeight;
 
-        for (var i = 0; i < l1.NumKernels; i++)
-        {
-            SaveImageRgb($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
-                output.Slice(offset * channelSize, channelSize),
-                output.Slice((offset + 1) * channelSize, channelSize),
-                output.Slice((offset + 2) * channelSize, channelSize));
+    //    for (var i = 0; i < l1.NumKernels; i++)
+    //    {
+    //        SaveImageRgb($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
+    //            output.Slice(offset * channelSize, channelSize),
+    //            output.Slice((offset + 1) * channelSize, channelSize),
+    //            output.Slice((offset + 2) * channelSize, channelSize));
 
-            offset += 3;
-        }
-    }
+    //        offset += 3;
+    //    }
+    //}
 
-    public static void OutputImageGrayScale(KernelConvolutionLayer l1, float[] imageData, string prefix)
-    {
-        SaveImageGrayScale($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
-            imageData);
+    //public static void OutputImageGrayScale(KernelConvolutionLayer l1, float[] imageData, string prefix)
+    //{
+    //    SaveImageGrayScale($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
+    //        imageData);
 
-        var o = new float[l1.NumOutputs];
+    //    var o = new float[l1.NumOutputs];
 
-        l1.Forward(imageData, o);
+    //    l1.Forward(imageData, o);
 
-        var channelSize = l1.OutputWidth * l1.OutputHeight;
-        var output = o.AsSpan();
-        for (var i = 0; i < l1.NumKernels; i++)
-            SaveImageGrayScale($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
-                output.Slice(i * channelSize, channelSize));
-    }
+    //    var channelSize = l1.OutputWidth * l1.OutputHeight;
+    //    var output = o.AsSpan();
+    //    for (var i = 0; i < l1.NumKernels; i++)
+    //        SaveImageGrayScale($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
+    //            output.Slice(i * channelSize, channelSize));
+    //}
 
     public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test)
         LoadData(TrainConfig config)

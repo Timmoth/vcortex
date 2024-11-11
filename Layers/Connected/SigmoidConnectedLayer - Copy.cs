@@ -7,9 +7,9 @@ using vcortex.Accelerated;
 
 namespace vcortex.Layers.Connected;
 
-public class SigmoidConnectedLayer : IConnectedLayer
+public class ReluConnectedLayer : IConnectedLayer
 {
-    public SigmoidConnectedLayer(int numOutputs)
+    public ReluConnectedLayer(int numOutputs)
     {
         NumOutputs = numOutputs;
     }
@@ -138,8 +138,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
             sum += activations[activationInputOffset + j] * parameters[weightsOffset + j];
         }
 
-        // Apply the activation function to the sum and store it in the output
-        activations[activationOutputOffset + interBatchIndex] = 1.0f / (1.0f + (float)Math.Exp(-sum));
+        activations[activationOutputOffset + interBatchIndex] = Math.Max(0.0f, sum);
     }
 
     public void Forward(NetworkAccelerator accelerator)
@@ -196,7 +195,8 @@ public class SigmoidConnectedLayer : IConnectedLayer
         // Loop over each neuron in the output layer
         // Calculate delta for this neuron using the derivative of the activation function
         var x = activations[activationOutputOffset + outputIndex];
-        var derivative = x * (1.0f - x);
+
+        var derivative = x > 0 ? 1.0f : 0.0f;
         var delta = errors[nextErrorOffset + outputIndex] * derivative;
         var weightsOffset = layerData.ParameterOffset + outputIndex * layerData.NumInputs;
 
@@ -226,7 +226,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
         // Loop over each neuron in the output layer
         // Calculate delta for this neuron using the derivative of the activation function
         var x = activations[activationOutputOffset + interBatchIndex];
-        var derivative = x * (1.0f - x);
+        var derivative = x > 0 ? 1.0f : 0.0f;
         var delta = errors[nextErrorOffset + interBatchIndex] * derivative;
 
         // Update the bias for this neuron
@@ -318,7 +318,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
     {
         // Number of samples in the batch
         var batchSize = networkData.BatchSize;
-        var lr = networkData.LearningRate / batchSize; // Scale learning rate by batch size for averaging
+        var lr = networkData.LearningRate; // Scale learning rate by batch size for averaging
         var interBatchIndex = index % layerData.NumOutputs;
 
         // Accumulate and average the bias gradients
@@ -378,12 +378,12 @@ public class SigmoidConnectedLayer : IConnectedLayer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Activate(float x)
     {
-        return 1.0f / (1.0f + (float)Math.Exp(-x));
+        return Math.Max(0.0f, x);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Derivative(float x)
     {
-        return x * (1.0f - x);
+        return x > 0 ? 1.0f : 0.0f;
     }
 }

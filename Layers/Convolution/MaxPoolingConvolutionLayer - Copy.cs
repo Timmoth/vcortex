@@ -4,16 +4,15 @@ using vcortex.Accelerated;
 
 namespace vcortex.Layers.Convolution;
 
-public class MaxPoolingConvolutionLayer : IConvolutionalLayer
+public class ReLUConvolutionLayer : IConvolutionalLayer
 {
-    public MaxPoolingConvolutionLayer(int poolSize)
+    public ReLUConvolutionLayer()
     {
-        PoolSize = poolSize;
+
     }
 
-    public int PoolSize { get; }
-    public int OutputWidth => InputWidth / PoolSize;
-    public int OutputHeight => InputHeight / PoolSize;
+    public int OutputWidth => InputWidth;
+    public int OutputHeight => InputHeight;
 
     public int NumInputs => InputWidth * InputHeight * InputChannels;
     public int NumOutputs => OutputWidth * OutputHeight * InputChannels;
@@ -61,7 +60,6 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
             OutputHeight = OutputHeight,
             InputChannels = InputChannels,
             OutputChannels = OutputChannels,
-            PoolSize = PoolSize
         };
     }
 
@@ -95,37 +93,12 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
             OutputHeight = OutputHeight,
             InputChannels = InputChannels,
             OutputChannels = OutputChannels,
-            PoolSize = PoolSize
         };
     }
 
     public void Forward(float[] activations)
     {
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
 
-        for (var c = 0; c < InputChannels; c++)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                {
-                    var outputIndex = y * OutputWidth + x + c * outputChannelOffset;
-
-                    var max = float.MinValue;
-
-                    // SIMD for pooling region, process multiple elements at once
-                    for (var ky = 0; ky < PoolSize; ky++)
-                        for (var kx = 0; kx < PoolSize; kx++)
-                        {
-                            var oldX = x * PoolSize + kx;
-                            var oldY = y * PoolSize + ky;
-                            var inputIndex = oldY * InputWidth + oldX + c * inputChannelOffset;
-
-                            // Here, SIMD could help if PoolSize is large, by comparing multiple input elements at once
-                            max = Math.Max(max, activations[ActivationInputOffset + inputIndex]);
-                        }
-
-                    activations[ActivationOutputOffset + outputIndex] = max;
-                }
     }
 
     public int GradientCount => 0;
@@ -133,38 +106,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
     public void Backward(float[] activations, float[] errors,
         float[] gradients, float learningRate)
     {
-        Array.Clear(errors, CurrentLayerErrorOffset, NumInputs);
-        var inputChannelOffset = InputWidth * InputHeight;
-        var outputChannelOffset = OutputWidth * OutputHeight;
-
-        for (var c = 0; c < InputChannels; c++)
-            for (var y = 0; y < OutputHeight; y++)
-                for (var x = 0; x < OutputWidth; x++)
-                {
-                    var outputIndex = y * OutputWidth + x + c * outputChannelOffset;
-
-                    var max = float.MinValue;
-                    var maxIndex = -1;
-
-                    // Find max position within pool window
-                    for (var ky = 0; ky < PoolSize; ky++)
-                        for (var kx = 0; kx < PoolSize; kx++)
-                        {
-                            var oldX = x * PoolSize + kx;
-                            var oldY = y * PoolSize + ky;
-                            var inputIndex = oldY * InputWidth + oldX + c * inputChannelOffset;
-
-                            if (activations[ActivationInputOffset + inputIndex] > max)
-                            {
-                                max = activations[ActivationInputOffset + inputIndex];
-                                maxIndex = inputIndex;
-                            }
-                        }
-
-                    if (maxIndex >= 0)
-                        // Propagate error to the max position only
-                        errors[CurrentLayerErrorOffset + maxIndex] = errors[NextLayerErrorOffset + outputIndex];
-                }
+     
     }
 
     public void AccumulateGradients(float[][] gradients, float learningRate)
@@ -173,7 +115,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
 
     public void Forward(NetworkAccelerator accelerator)
     {
-        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
+        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
     }
 
     public void Backward(NetworkAccelerator accelerator)
@@ -183,7 +125,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
             accelerator.Buffers.Errors.View.SubView(accelerator.Network.NetworkData.ErrorCount * i + LayerData.CurrentLayerErrorOffset, LayerData.NumInputs).MemSetToZero();
         }
 
-        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight * LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
+        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
             accelerator.Buffers.Errors.View);
     }
 
@@ -195,32 +137,13 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
      ArrayView<float> activations)
     {
         // index = batches * InputChannels * height * width
-        int batch = index / (layerData.InputChannels * layerData.OutputHeight * layerData.OutputWidth);
-        int c = (index / (layerData.OutputHeight * layerData.OutputWidth)) % layerData.InputChannels;
-        int y = (index / layerData.OutputWidth) % layerData.OutputHeight;
-        int x = index % layerData.OutputWidth;
+        int batch = index / layerData.NumOutputs;
+        int outputIndex = index % layerData.NumOutputs;
 
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batch * networkData.ActivationCount + layerData.ActivationOutputOffset;
 
-        var inputChannelOffset = layerData.InputWidth * layerData.InputHeight;
-        var outputChannelOffset = layerData.OutputWidth * layerData.OutputHeight;
-
-        var outputIndex = y * layerData.OutputWidth + x + c * outputChannelOffset;
-
-        var max = float.MinValue;
-
-        for (var ky = 0; ky < layerData.PoolSize; ky++)
-            for (var kx = 0; kx < layerData.PoolSize; kx++)
-            {
-                var oldX = x * layerData.PoolSize + kx;
-                var oldY = y * layerData.PoolSize + ky;
-                var inputIndex = oldY * layerData.InputWidth + oldX + c * inputChannelOffset;
-                max = Math.Max(max, activations[activationInputOffset + inputIndex]);
-            }
-
-        activations[activationOutputOffset + outputIndex] = max;
-
+        activations[activationOutputOffset + outputIndex] = Math.Max(0, activations[activationInputOffset + outputIndex]);
     }
 
     public static void BackwardKernelImpl(
@@ -232,41 +155,14 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         ArrayView<float> gradients,
         ArrayView<float> errors)
     {
-        int batch = index / (layerData.InputChannels * layerData.OutputHeight * layerData.OutputWidth);
-        int c = (index / (layerData.OutputHeight * layerData.OutputWidth)) % layerData.InputChannels;
-        int y = (index / layerData.OutputWidth) % layerData.OutputHeight;
-        int x = index % layerData.OutputWidth;
+        int batch = index / layerData.NumOutputs;
+        int outputIndex = index % layerData.NumOutputs;
 
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var currentErrorOffset = batch * networkData.ErrorCount + layerData.CurrentLayerErrorOffset;
         var nextErrorOffset = batch * networkData.ErrorCount + layerData.NextLayerErrorOffset;
 
-        var inputChannelOffset = layerData.InputWidth * layerData.InputHeight;
-        var outputChannelOffset = layerData.OutputWidth * layerData.OutputHeight;
-
-        var outputIndex = y * layerData.OutputWidth + x + c * outputChannelOffset;
-
-        var max = float.MinValue;
-        var maxIndex = -1;
-
-        // Find max position within pool window
-        for (var ky = 0; ky < layerData.PoolSize; ky++)
-            for (var kx = 0; kx < layerData.PoolSize; kx++)
-            {
-                var oldX = x * layerData.PoolSize + kx;
-                var oldY = y * layerData.PoolSize + ky;
-                var inputIndex = oldY * layerData.InputWidth + oldX + c * inputChannelOffset;
-
-                if (activations[activationInputOffset + inputIndex] > max)
-                {
-                    max = activations[activationInputOffset + inputIndex];
-                    maxIndex = inputIndex;
-                }
-            }
-
-        if (maxIndex >= 0)
-            // Propagate error to the max position only
-            errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
+        errors[currentErrorOffset + outputIndex] = activations[activationInputOffset + outputIndex] > 0 ? errors[nextErrorOffset + outputIndex] : 0;
     }
     public static void GradientAccumulationKernelImpl(
         Index1D index,
