@@ -236,7 +236,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
     {
         BackwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
             accelerator.Buffers.Errors.View);
-        BackwardKernel2(LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
+        BackwardKernel2(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
             accelerator.Buffers.Errors.View);
     }
 
