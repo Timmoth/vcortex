@@ -9,10 +9,10 @@ public class Network
 
     public NetworkData NetworkData;
 
-    public Network(ILayer[] layers)
+    public Network(ILayer[] layers, int batchSize)
     {
         _layers = layers;
-        NetworkData = new NetworkData(0.01f, ActivationCount, ActivationCount, GradientCount, 200, 0.9f, 0.999f, 1e-8f,
+        NetworkData = new NetworkData(0.01f, ActivationCount, ActivationCount, GradientCount, batchSize, 0.9f, 0.999f, 1e-8f,
             0);
     }
 

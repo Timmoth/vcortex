@@ -13,17 +13,12 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
     }
 
     public int PoolSize { get; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> ForwardKernel { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>,
-        ArrayView<float>> BackwardKernel { get; private set; }
-
+    
     public int OutputWidth => InputWidth / PoolSize;
     public int OutputHeight => InputHeight / PoolSize;
 
     public int NumInputs => InputWidth * InputHeight * InputChannels;
-    public int NumOutputs => OutputWidth * OutputHeight * InputChannels;
+    public int NumOutputs => OutputWidth * OutputHeight * OutputChannels;
 
     public int InputWidth { get; private set; }
     public int InputHeight { get; private set; }
@@ -36,6 +31,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
     public int GradientOffset { get; private set; }
     public int ParameterCount { get; private set; }
     public int ParameterOffset { get; private set; }
+    public int GradientCount => 0;
 
     public void Connect(IConvolutionalLayer prevLayer)
     {
@@ -79,42 +75,44 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
             OutputHeight, InputChannels, OutputChannels, 0, 0, PoolSize);
     }
 
-    public int GradientCount => 0;
 
-    public void AccumulateGradients(NetworkAccelerator accelerator)
+    public LayerData LayerData { get; set; }
+
+    #region Kernels
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> _forwardKernel { get; private set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>,
+        ArrayView<float>> _backwardKernel { get; private set; }
+    public void CompileKernels(Accelerator accelerator)
     {
+        _forwardKernel =
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
+                ForwardKernel);
+        _backwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+                    BackwardKernel);
     }
-
 
     public void Forward(NetworkAccelerator accelerator)
     {
-        ForwardKernel(
+        _forwardKernel(
             accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight *
             LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View);
     }
 
     public void Backward(NetworkAccelerator accelerator)
     {
-        BackwardKernel(
+        _backwardKernel(
             accelerator.Network.NetworkData.BatchSize * LayerData.InputChannels * LayerData.OutputHeight *
             LayerData.OutputWidth, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View,
             accelerator.Buffers.Errors.View);
     }
-
-    public void CompileKernels(Accelerator accelerator)
+    public void AccumulateGradients(NetworkAccelerator accelerator)
     {
-        ForwardKernel =
-            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
-                ForwardKernelImpl);
-        BackwardKernel =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
-                    BackwardKernelImpl);
     }
 
-    public LayerData LayerData { get; set; }
-
-    public static void ForwardKernelImpl(
+    public static void ForwardKernel(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
@@ -159,7 +157,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
         activations[activationOutputOffset + outputIndex] = max;
     }
 
-    public static void BackwardKernelImpl(
+    public static void BackwardKernel(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
@@ -186,7 +184,7 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
 
         // Initialize max value to track the maximum and its position
         var max = float.MinValue;
-        var maxIndex = -1;
+        var maxIndex = 0;
 
         // Traverse the pooling window to identify the maximum activation and its index
         for (var ky = 0; ky < layerData.PoolSize; ky++)
@@ -200,14 +198,19 @@ public class MaxPoolingConvolutionLayer : IConvolutionalLayer
             var inputIndex = oldY * layerData.InputWidth + oldX + c * inputChannelOffset;
 
             // Update the maximum and record the index if a new max is found
-            if (activations[activationInputOffset + inputIndex] > max)
+            if (activations[activationInputOffset + inputIndex] >= max)
             {
                 max = activations[activationInputOffset + inputIndex];
                 maxIndex = inputIndex;
             }
         }
 
-        // Only propagate the error to the position where the max was found
-        if (maxIndex >= 0) errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
+        // propagate the error to the position where the max was found
+        if (maxIndex >= 0)
+        {
+            errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
+        }
     }
+    #endregion
+
 }

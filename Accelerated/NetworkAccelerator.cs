@@ -77,22 +77,32 @@ public class NetworkAccelerator : IDisposable
         foreach (var networkLayer in Network._layers) networkLayer.FillRandom(this);
     }
 
-    public List<float[]> Predict(List<float[]> inputs)
+    public List<float[]> Predict(List<float[]> batchs)
     {
         var outputs = new List<float[]>();
         var batchSize = Network.NetworkData.BatchSize;
         var finalLayer = Network._layers[^1];
 
         // Divide the data into mini-batches
-        for (var batchStart = 0; batchStart < inputs.Count; batchStart += batchSize)
+        for (var batchStart = 0; batchStart < batchs.Count; batchStart += batchSize)
         {
             // Get the current batch
-            var batch = inputs.Skip(batchStart).Take(batchSize).ToList();
+            var batch = batchs.Skip(batchStart).Take(batchSize).ToList();
+            var inputLayer = Network._layers[0];
             for (var i = 0; i < batch.Count; i++)
-                Buffers.Activations.View.SubView(Network.NetworkData.ActivationCount * i, batch[i].Length)
-                    .CopyFromCPU(batch[i]);
-            foreach (var layer in Network._layers) layer.Forward(this);
-
+                Array.Copy(batch[i], 0, _flattenedInputs, i * inputLayer.LayerData.NumInputs,
+                    inputLayer.LayerData.NumInputs);
+            
+            Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
+            LoadInputsKernel(_flattenedInputs.Length, Network.NetworkData, inputLayer.LayerData, Buffers.Inputs.View,
+                Buffers.Activations.View);
+            
+            foreach (var layer in Network._layers)
+            {
+                layer.Forward(this);
+                accelerator.Synchronize();
+            }
+            
             for (var i = 0; i < batch.Count; i++)
             {
                 var output = new float[finalLayer.NumOutputs];
@@ -148,10 +158,7 @@ public class NetworkAccelerator : IDisposable
     {
         var stopwatch = Stopwatch.StartNew();
 
-        Network.NetworkData = new NetworkData(Network.NetworkData.LearningRate, Network.NetworkData.ActivationCount,
-            Network.NetworkData.ActivationCount, Network.NetworkData.GradientCount, Network.NetworkData.BatchSize, 0.9f,
-            0.999f, 1e-8f,
-            Network.NetworkData.Timestep + 1);
+        Network.NetworkData = Network.NetworkData.IncrementTimestep();
 
         var inputLayer = Network._layers[0];
         var outputLayer = Network._layers[^1];

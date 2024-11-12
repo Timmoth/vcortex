@@ -26,3 +26,20 @@ public readonly struct NetworkData
         Timestep = timestep;
     }
 }
+
+public static class NetworkDataExtensions
+{
+    public static NetworkData IncrementTimestep(this NetworkData networkData)
+    {
+        return new NetworkData(networkData.LearningRate, networkData.ActivationCount,
+            networkData.ActivationCount, networkData.GradientCount, networkData.BatchSize, networkData.Beta1, networkData.Beta2, networkData.Epsilon,
+            networkData.Timestep + 1);
+    }
+    
+    public static NetworkData ResetTimestep(this NetworkData networkData)
+    {
+        return new NetworkData(networkData.LearningRate, networkData.ActivationCount,
+            networkData.ActivationCount, networkData.GradientCount, networkData.BatchSize, networkData.Beta1, networkData.Beta2, networkData.Epsilon,
+            0);
+    }
+}

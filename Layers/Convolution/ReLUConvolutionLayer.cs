@@ -7,22 +7,11 @@ namespace vcortex.Layers.Convolution;
 
 public class ReLUConvolutionLayer : IConvolutionalLayer
 {
-    public float[] Parameters { get; set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> ForwardKernel { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> BackwardKernel
-    {
-        get;
-        private set;
-    }
-
     public int OutputWidth => InputWidth;
     public int OutputHeight => InputHeight;
 
     public int NumInputs => InputWidth * InputHeight * InputChannels;
     public int NumOutputs => OutputWidth * OutputHeight * InputChannels;
-
     public int InputWidth { get; private set; }
     public int InputHeight { get; private set; }
     public int InputChannels { get; private set; }
@@ -37,6 +26,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
 
     public int GradientCount => 0;
 
+    public LayerData LayerData { get; set; }
 
     public void Connect(IConvolutionalLayer prevLayer)
     {
@@ -52,8 +42,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         CurrentLayerErrorOffset = prevLayer.NextLayerErrorOffset;
         NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
         GradientOffset = prevLayer.GradientOffset + prevLayer.GradientCount;
-
-
+        
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
             NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
             OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
@@ -73,22 +62,26 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         CurrentLayerErrorOffset = 0;
         NextLayerErrorOffset = NumInputs;
         GradientOffset = 0;
-
-
+        
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
             NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
             OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
     }
 
+    #region Kernels
+
+    private Action<Index1D, NetworkData, LayerData, ArrayView<float>> _forwardKernel;
+    private Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> _backwardKernel;
+    
     public void Forward(NetworkAccelerator accelerator)
     {
-        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData,
+        _forwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData,
             LayerData, accelerator.Buffers.Activations.View);
     }
 
     public void Backward(NetworkAccelerator accelerator)
     {
-        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs,
+        _backwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs,
             accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View,
             accelerator.Buffers.Errors.View);
     }
@@ -101,18 +94,16 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
 
     public void CompileKernels(Accelerator accelerator)
     {
-        ForwardKernel =
+        _forwardKernel =
             accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
-                ForwardKernelImpl);
-        BackwardKernel =
+                ForwardKernel);
+        _backwardKernel =
             accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
-                    BackwardKernelImpl);
+                    BackwardKernel);
     }
-
-    public LayerData LayerData { get; set; }
-
-    public static void ForwardKernelImpl(
+    
+    public static void ForwardKernel(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
@@ -129,7 +120,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
             XMath.Max(0, activations[activationInputOffset + outputIndex]);
     }
 
-    public static void BackwardKernelImpl(
+    public static void BackwardKernel(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
@@ -145,6 +136,7 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
 
         var activationValue = activations[activationInputOffset + outputIndex];
         errors[currentErrorOffset + outputIndex] = activationValue > 1e-6f ? errors[nextErrorOffset + outputIndex] : 0;
-        //errors[currentErrorOffset + outputIndex] = errors[nextErrorOffset + outputIndex];
     }
+
+    #endregion
 }

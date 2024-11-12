@@ -79,20 +79,13 @@ public class SigmoidConnectedLayer : IConnectedLayer
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
     {
-        var rnd = Random.Shared;
-        var limit = MathF.Sqrt(6.0f / (NumInputs + NumOutputs));
-
         var parameters = new float[ParameterCount];
 
-        for (var i = 0; i < NumOutputs; i++)
+        var rnd = Random.Shared;
+        var variance = 1.0f / (ParameterCount);
+        for (var i = 0; i < ParameterCount; i++)
         {
-            parameters[BiasOffset + i] =
-                (float)(rnd.NextDouble() * 2 * limit - limit); // Random value in [-limit, limit]
-            var weightsOffset = i * NumInputs;
-
-            for (var j = 0; j < NumInputs; j++)
-                parameters[weightsOffset + j] =
-                    (float)(rnd.NextDouble() * 2 * limit - limit); // Random value in [-limit, limit]
+            parameters[i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
         }
 
         accelerator.Buffers.Parameters.View.SubView(LayerData.ParameterOffset, ParameterCount).CopyFromCPU(parameters);
@@ -166,23 +159,23 @@ public class SigmoidConnectedLayer : IConnectedLayer
         ArrayView<float> activations)
     {
         // Compute indices for the batch and neuron within the batch
-        var outputActivationIndex = index % layerData.NumOutputs;
         var batchIndex = index / layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
 
         // Calculate offset for input and output activations in the batch
         var activationInputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
 
         // Start with the bias value as the initial sum for this neuron
-        var sum = parameters[layerData.ParameterOffset + layerData.BiasOffset + outputActivationIndex];
-        var weightsOffset = layerData.ParameterOffset + outputActivationIndex * layerData.NumInputs;
+        var sum = parameters[layerData.ParameterOffset + layerData.BiasOffset + outputIndex];
+        var weightsOffset = layerData.ParameterOffset + outputIndex * layerData.NumInputs;
 
         // Accumulate the weighted sum for each input
         for (var j = 0; j < layerData.NumInputs; j++)
             sum += activations[activationInputOffset + j] * parameters[weightsOffset + j];
 
         // Apply sigmoid activation and store the result
-        activations[activationOutputOffset + outputActivationIndex] = 1.0f / (1.0f + XMath.Exp(-sum));
+        activations[activationOutputOffset + outputIndex] = 1.0f / (1.0f + XMath.Exp(-sum));
     }
 
     // Backward pass kernel 1 for calculating weight gradients and propagating errors
@@ -213,12 +206,12 @@ public class SigmoidConnectedLayer : IConnectedLayer
         var delta = errors[nextErrorOffset + outputIndex] * derivative;
 
         // Compute the offset for weights of this output neuron
-        var weightsOffset = layerData.ParameterOffset + outputIndex * layerData.NumInputs;
+        var weightIndex = outputIndex * layerData.NumInputs + inputIndex;
 
         // Atomic update to propagate error back to current layer and accumulate weight gradient
-        Atomic.Add(ref errors[currentErrorOffset + inputIndex], delta * parameters[weightsOffset + inputIndex]);
-        gradients[gradientOffset + outputIndex * layerData.NumInputs + inputIndex] =
-            delta * activations[activationInputOffset + inputIndex];
+        Atomic.Add(ref errors[currentErrorOffset + inputIndex], delta * parameters[layerData.ParameterOffset + weightIndex]);
+        
+        gradients[gradientOffset + weightIndex] = delta * activations[activationInputOffset + inputIndex];
     }
 
 
@@ -232,8 +225,8 @@ public class SigmoidConnectedLayer : IConnectedLayer
         ArrayView<float> errors)
     {
         // Calculate indices and offsets
-        var outputIndex = index % layerData.NumOutputs;
         var batchIndex = index / layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
         var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
         var nextErrorOffset = batchIndex * networkData.ErrorCount + layerData.NextLayerErrorOffset;
         var gradientOffset = batchIndex * networkData.GradientCount + layerData.GradientOffset;
@@ -263,7 +256,8 @@ public class SigmoidConnectedLayer : IConnectedLayer
         var inputIndex = index % layerData.NumInputs;
 
         // Initialize weight gradient accumulation
-        var gradientIndex = layerData.GradientOffset + outputIndex * layerData.NumInputs + inputIndex;
+        var weightIndex = outputIndex * layerData.NumInputs + inputIndex;
+        var gradientIndex = layerData.GradientOffset + weightIndex;
         var weightGradient = 0.0f;
 
         // Accumulate weight gradients across the batch
@@ -280,8 +274,7 @@ public class SigmoidConnectedLayer : IConnectedLayer
         var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
 
         // Update weight parameter
-        var weightOffset = layerData.ParameterOffset + layerData.NumInputs * outputIndex + inputIndex;
-        parameters[weightOffset] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
+        parameters[layerData.ParameterOffset + weightIndex] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
     }
 
     // Kernel for accumulating and updating bias gradients using Adam optimization

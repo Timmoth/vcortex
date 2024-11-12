@@ -7,14 +7,10 @@ namespace vcortex;
 public static class Trainer
 {
     public static void TrainAccelerated(NetworkAccelerator accelerator, List<(float[] imageData, float[] label)> data,
-        int epochs,
-        float learningRate)
+        int epochs)
     {
         Console.WriteLine("Training network");
-        accelerator.Network.NetworkData = new NetworkData(learningRate, accelerator.Network.NetworkData.ActivationCount,
-            accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.GradientCount, 200, 0.9f,
-            0.999f, 1e-8f,
-            0);
+        accelerator.Network.NetworkData = accelerator.Network.NetworkData.ResetTimestep();
 
         // Forward Pass
         var batchSize = accelerator.Network.NetworkData.BatchSize;

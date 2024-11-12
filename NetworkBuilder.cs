@@ -69,8 +69,8 @@ public class NetworkBuilder
         return this;
     }
 
-    public Network Build()
+    public Network Build(int batchSize)
     {
-        return new Network(_layers.ToArray());
+        return new Network(_layers.ToArray(), batchSize);
     }
 }
