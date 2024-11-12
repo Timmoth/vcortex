@@ -14,6 +14,25 @@ public class ReluConnectedLayer : IConnectedLayer
     }
 
     public int BiasOffset => NumInputs * NumOutputs;
+    public float[] Parameters { get; set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel
+    {
+        get;
+        private set;
+    }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> BackwardKernel1 { get; private set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> BackwardKernel2 { get; private set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> GradientAccumulationKernel1 { get; private set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> GradientAccumulationKernel2 { get; private set; }
 
     public int NumInputs { get; private set; }
     public int NumOutputs { get; }
@@ -50,7 +69,6 @@ public class ReluConnectedLayer : IConnectedLayer
 
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
             NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-
     }
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
@@ -82,7 +100,63 @@ public class ReluConnectedLayer : IConnectedLayer
     public int GradientOffset { get; private set; }
     public int ParameterCount { get; private set; }
     public int ParameterOffset { get; private set; }
-    public float[] Parameters { get; set; }
+
+    public void Forward(NetworkAccelerator accelerator)
+    {
+        ForwardKernel(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData,
+            LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
+    }
+
+    public void Backward(NetworkAccelerator accelerator)
+    {
+        BackwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * accelerator.Network.NetworkData.BatchSize,
+            accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View,
+            accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
+            accelerator.Buffers.Errors.View);
+        BackwardKernel2(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize,
+            accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View,
+            accelerator.Buffers.Gradients.View,
+            accelerator.Buffers.Errors.View);
+    }
+
+    public void AccumulateGradients(NetworkAccelerator accelerator)
+    {
+        GradientAccumulationKernel1(LayerData.NumOutputs * LayerData.NumInputs, accelerator.Network.NetworkData,
+            LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View,
+            accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
+        GradientAccumulationKernel2(LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData,
+            accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View,
+            accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
+    }
+
+    public void CompileKernels(Accelerator accelerator)
+    {
+        ForwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+                    ForwardKernelImpl);
+        BackwardKernel1 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
+
+        BackwardKernel2 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
+
+        GradientAccumulationKernel1 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel1Impl);
+
+        GradientAccumulationKernel2 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel2Impl);
+    }
+
+    public LayerData LayerData { get; set; }
 
     public static void ForwardKernelImpl(
         Index1D index,
@@ -101,17 +175,11 @@ public class ReluConnectedLayer : IConnectedLayer
 
         // Process each input element individually
         for (var j = 0; j < layerData.NumInputs; j++)
-        {
             sum += activations[activationInputOffset + j] * parameters[weightsOffset + j];
-        }
 
         activations[activationOutputOffset + interBatchIndex] = XMath.Max(0.0f, sum);
     }
 
-    public void Forward(NetworkAccelerator accelerator)
-    {
-        ForwardKernel(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View);
-    }
     public static void BackwardKernel1Impl(
         Index1D index,
         NetworkData networkData,
@@ -121,9 +189,9 @@ public class ReluConnectedLayer : IConnectedLayer
         ArrayView<float> gradients,
         ArrayView<float> errors)
     {
-        int batchIndex = index / (layerData.NumInputs * layerData.NumOutputs); 
-        int outputIndex = (index / layerData.NumInputs) % layerData.NumOutputs;
-        int inputIndex = index % layerData.NumInputs;
+        int batchIndex = index / (layerData.NumInputs * layerData.NumOutputs);
+        var outputIndex = index / layerData.NumInputs % layerData.NumOutputs;
+        var inputIndex = index % layerData.NumInputs;
         var activationInputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
         var currentErrorOffset = batchIndex * networkData.ErrorCount + layerData.CurrentLayerErrorOffset;
@@ -143,16 +211,17 @@ public class ReluConnectedLayer : IConnectedLayer
         Atomic.Add(ref errors[currentErrorOffset + inputIndex], delta * parameters[weightsOffset + inputIndex]);
 
         // Update the weight for this input
-        gradients[gradientOffset + outputIndex * layerData.NumInputs + inputIndex] = delta * activations[activationInputOffset + inputIndex];
+        gradients[gradientOffset + outputIndex * layerData.NumInputs + inputIndex] =
+            delta * activations[activationInputOffset + inputIndex];
     }
 
     public static void BackwardKernel2Impl(
-    Index1D index,
-    NetworkData networkData,
-    LayerData layerData,
-    ArrayView<float> activations,
-    ArrayView<float> gradients,
-    ArrayView<float> errors)
+        Index1D index,
+        NetworkData networkData,
+        LayerData layerData,
+        ArrayView<float> activations,
+        ArrayView<float> gradients,
+        ArrayView<float> errors)
     {
         var interBatchIndex = index % layerData.NumOutputs;
         var batchOffset = index / layerData.NumOutputs;
@@ -170,20 +239,12 @@ public class ReluConnectedLayer : IConnectedLayer
         gradients[gradientOffset + layerData.BiasOffset + interBatchIndex] = delta;
     }
 
-    public void Backward(NetworkAccelerator accelerator)
-    {
-        BackwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
-            accelerator.Buffers.Errors.View);
-        BackwardKernel2(LayerData.NumOutputs * accelerator.Network.NetworkData.BatchSize, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Gradients.View,
-            accelerator.Buffers.Errors.View);
-    }
-    
-       public static void GradientAccumulationKernel1Impl(
+    public static void GradientAccumulationKernel1Impl(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
         ArrayView<float> parameters,
-        ArrayView<float> gradients, 
+        ArrayView<float> gradients,
         ArrayView<float> firstMoment,
         ArrayView<float> secondMoment)
     {
@@ -197,26 +258,25 @@ public class ReluConnectedLayer : IConnectedLayer
         var weightOffset = layerData.ParameterOffset + layerData.NumInputs * outputIndex + inputIndex;
 
         // Accumulate weight gradients
-        var gradientIndex = + layerData.GradientOffset + outputIndex * layerData.NumInputs + inputIndex;
+        var gradientIndex = +layerData.GradientOffset + outputIndex * layerData.NumInputs + inputIndex;
 
         // Accumulate the weight gradients across the batch
         var weightGradient = 0.0f;
-        for (int i = 0; i < batchSize; i++)
-        {
-            weightGradient += gradients[networkData.GradientCount * i + gradientIndex];
-        }
-        
+        for (var i = 0; i < batchSize; i++) weightGradient += gradients[networkData.GradientCount * i + gradientIndex];
+
         // Apply batch scaling factor
         weightGradient /= batchSize;
 
         // Update the first and second moment estimates
-        firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * weightGradient;
-        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * weightGradient * weightGradient;
+        firstMoment[gradientIndex] =
+            networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * weightGradient;
+        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] +
+                                      (1 - networkData.Beta2) * weightGradient * weightGradient;
 
         // Bias correction for the moments
         var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
         var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
-        
+
         // Average the gradient and apply the weight update
         parameters[weightOffset] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
     }
@@ -235,70 +295,28 @@ public class ReluConnectedLayer : IConnectedLayer
         var lr = networkData.LearningRate; // Scale learning rate by batch size for averaging
         var interBatchIndex = index;
         var gradientIndex = layerData.GradientOffset + layerData.BiasOffset + interBatchIndex;
-        
+
         // Accumulate and average the bias gradients
         var biasGradient = 0.0f;
-        for (int i = 0; i < batchSize; i++)
-        {
-            biasGradient += gradients[networkData.GradientCount * i + gradientIndex];
-        }
+        for (var i = 0; i < batchSize; i++) biasGradient += gradients[networkData.GradientCount * i + gradientIndex];
 
         // Apply batch scaling factor
         biasGradient /= batchSize;
 
         // Update the first and second moment estimates
-        firstMoment[gradientIndex] = networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * biasGradient;
-        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] + (1 - networkData.Beta2) * biasGradient * biasGradient;
+        firstMoment[gradientIndex] =
+            networkData.Beta1 * firstMoment[gradientIndex] + (1 - networkData.Beta1) * biasGradient;
+        secondMoment[gradientIndex] = networkData.Beta2 * secondMoment[gradientIndex] +
+                                      (1 - networkData.Beta2) * biasGradient * biasGradient;
 
         // Bias correction for the moments
         var mHat = firstMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta1, networkData.Timestep));
         var vHat = secondMoment[gradientIndex] / (1 - MathF.Pow(networkData.Beta2, networkData.Timestep));
-        
+
         // Average the gradient and apply the weight update
-        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -= networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
-        
+        parameters[layerData.ParameterOffset + layerData.BiasOffset + interBatchIndex] -=
+            networkData.LearningRate * mHat / (MathF.Sqrt(vHat) + networkData.Epsilon);
     }
-    public void AccumulateGradients(NetworkAccelerator accelerator)
-    {
-        GradientAccumulationKernel1(LayerData.NumOutputs * LayerData.NumInputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View, accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
-        GradientAccumulationKernel2(LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Parameters.View, accelerator.Buffers.Gradients.View, accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
-    }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> ForwardKernel { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>,
-        ArrayView<float>> BackwardKernel1 { get; private set; } 
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
-        ArrayView<float>> BackwardKernel2 { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>> GradientAccumulationKernel1 { get; private set; }
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>> GradientAccumulationKernel2 { get; private set; }
-
-    public void CompileKernels(Accelerator accelerator)
-    {
-        ForwardKernel =
-            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
-                ForwardKernelImpl);
-        BackwardKernel1 =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
-
-        BackwardKernel2 =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
-
-        GradientAccumulationKernel1 =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel1Impl);
-
-        GradientAccumulationKernel2 =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel2Impl);
-    }
-
-    public LayerData LayerData { get; set; }
 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

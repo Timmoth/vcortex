@@ -1,15 +1,20 @@
-using ILGPU.Runtime;
 using ILGPU;
 using ILGPU.Algorithms;
+using ILGPU.Runtime;
 using vcortex.Accelerated;
 
 namespace vcortex.Layers.Convolution;
 
 public class ReLUConvolutionLayer : IConvolutionalLayer
 {
-    public ReLUConvolutionLayer()
-    {
+    public float[] Parameters { get; set; }
 
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> ForwardKernel { get; private set; }
+
+    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> BackwardKernel
+    {
+        get;
+        private set;
     }
 
     public int OutputWidth => InputWidth;
@@ -29,7 +34,6 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
     public int GradientOffset { get; private set; }
     public int ParameterCount { get; private set; }
     public int ParameterOffset { get; private set; }
-    public float[] Parameters { get; set; }
 
     public int GradientCount => 0;
 
@@ -51,7 +55,8 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
 
 
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
+            OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
     }
 
     public void Connect(ConvolutionInputConfig config)
@@ -71,33 +76,57 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
 
 
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth, OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
+            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
+            OutputHeight, InputChannels, OutputChannels, 0, 0, 0);
     }
 
     public void Forward(NetworkAccelerator accelerator)
     {
-        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View);
+        ForwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData,
+            LayerData, accelerator.Buffers.Activations.View);
     }
 
     public void Backward(NetworkAccelerator accelerator)
     {
-        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs, accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View, accelerator.Buffers.Errors.View);
+        BackwardKernel(accelerator.Network.NetworkData.BatchSize * LayerData.NumOutputs,
+            accelerator.Network.NetworkData, LayerData, accelerator.Buffers.Activations.View,
+            accelerator.Buffers.Errors.View);
     }
 
+    public void AccumulateGradients(NetworkAccelerator accelerator)
+    {
+        // No gradients
+    }
+
+
+    public void CompileKernels(Accelerator accelerator)
+    {
+        ForwardKernel =
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
+                ForwardKernelImpl);
+        BackwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+                    BackwardKernelImpl);
+    }
+
+    public LayerData LayerData { get; set; }
+
     public static void ForwardKernelImpl(
-     Index1D index,
-     NetworkData networkData,
-     LayerData layerData,
-     ArrayView<float> activations)
+        Index1D index,
+        NetworkData networkData,
+        LayerData layerData,
+        ArrayView<float> activations)
     {
         // index = batches * outputs
         int batch = index / layerData.NumOutputs;
-        int outputIndex = index % layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
 
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var activationOutputOffset = batch * networkData.ActivationCount + layerData.ActivationOutputOffset;
 
-        activations[activationOutputOffset + outputIndex] = XMath.Max(0, activations[activationInputOffset + outputIndex]);
+        activations[activationOutputOffset + outputIndex] =
+            XMath.Max(0, activations[activationInputOffset + outputIndex]);
     }
 
     public static void BackwardKernelImpl(
@@ -108,37 +137,14 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
         ArrayView<float> errors)
     {
         int batch = index / layerData.NumOutputs;
-        int outputIndex = index % layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
 
         var activationInputOffset = batch * networkData.ActivationCount + layerData.ActivationInputOffset;
         var currentErrorOffset = batch * networkData.ErrorCount + layerData.CurrentLayerErrorOffset;
         var nextErrorOffset = batch * networkData.ErrorCount + layerData.NextLayerErrorOffset;
 
-        float activationValue = activations[activationInputOffset + outputIndex];
-        errors[currentErrorOffset + outputIndex] = (activationValue > 1e-6f) ? errors[nextErrorOffset + outputIndex] : 0;
+        var activationValue = activations[activationInputOffset + outputIndex];
+        errors[currentErrorOffset + outputIndex] = activationValue > 1e-6f ? errors[nextErrorOffset + outputIndex] : 0;
         //errors[currentErrorOffset + outputIndex] = errors[nextErrorOffset + outputIndex];
     }
-
-    public void AccumulateGradients(NetworkAccelerator accelerator)
-    {
-        // No gradients
-    }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>> ForwardKernel { get; private set; }
-
-    public Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> BackwardKernel
-    { get; private set; }
-    
-
-    public void CompileKernels(Accelerator accelerator)
-    {
-        ForwardKernel =
-            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
-                ForwardKernelImpl);
-        BackwardKernel =
-            accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
-    }
-    public LayerData LayerData { get; set; }
-
 }

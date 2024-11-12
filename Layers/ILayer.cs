@@ -1,5 +1,4 @@
 using ILGPU.Runtime;
-using ILGPU;
 using vcortex.Accelerated;
 
 namespace vcortex.Layers;
@@ -18,18 +17,16 @@ public interface ILayer
     public int GradientOffset { get; }
     public int ParameterCount { get; }
     public int ParameterOffset { get; }
-    public float[] Parameters { get; set; }
+
+    public LayerData LayerData { get; set; }
 
     public virtual void FillRandom(NetworkAccelerator accelerator)
     {
     }
-    
+
     public void Forward(NetworkAccelerator accelerator);
     public void Backward(NetworkAccelerator accelerator);
     public void AccumulateGradients(NetworkAccelerator accelerator);
 
     public void CompileKernels(Accelerator accelerator);
-
-    public LayerData LayerData { get; set; }
-
 }

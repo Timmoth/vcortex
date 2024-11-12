@@ -8,7 +8,7 @@ internal class Program
 {
     private static readonly List<TrainConfig> TrainConfigs = new()
     {
-        new()
+        new TrainConfig
         {
             TrainPath = "../../../mnist_digits/train.csv",
             TestPath = "../../../mnist_digits/test.csv",
@@ -23,13 +23,13 @@ internal class Program
                 Grayscale = true
             }
         },
-        new()
+        new TrainConfig
         {
             TrainPath = "../../../mnist_fashion/train.csv",
             TestPath = "../../../mnist_fashion/test.csv",
             Outputs = 10,
-            Epochs = 10,
-            LearningRate = 0.001f,
+            Epochs = 100,
+            LearningRate = 0.0001f,
             InputDateType = InputDateType.Csv,
             InputConfig = new ConvolutionInputConfig
             {
@@ -38,7 +38,7 @@ internal class Program
                 Grayscale = true
             }
         },
-        new()
+        new TrainConfig
         {
             TrainPath = "../../../pandas_or_bears/train",
             TestPath = "../../../pandas_or_bears/test",
@@ -71,13 +71,8 @@ internal class Program
 
         var net = new NetworkBuilder(trainConfig.InputConfig)
             .Add(new KernelConvolutionLayer(16))
-            //.Add(new ReLUConvolutionLayer())
             .Add(new MaxPoolingConvolutionLayer(2))
-            .Add(new KernelConvolutionLayer(16))
-            //.Add(new ReLUConvolutionLayer())
-            .Add(new MaxPoolingConvolutionLayer(2))
-            //.Add(new ReluConnectedLayer(64))
-            .Add(new SigmoidConnectedLayer(128))
+            .Add(new SigmoidConnectedLayer(256))
             .Add(new SigmoidConnectedLayer(64))
             .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
             .Build();

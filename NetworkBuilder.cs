@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using vcortex.Layers;
 using vcortex.Layers.Connected;
 using vcortex.Layers.Convolution;
@@ -72,13 +71,6 @@ public class NetworkBuilder
 
     public Network Build()
     {
-        var parameterCount = _layers.Sum(l => l.ParameterCount);
-        var parameters = new float[parameterCount];
-        foreach (var layer in _layers)
-        {
-            layer.Parameters = parameters;
-        }
-
         return new Network(_layers.ToArray());
     }
 }

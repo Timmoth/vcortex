@@ -12,7 +12,8 @@ public readonly struct NetworkData
     public readonly float Epsilon;
     public readonly int Timestep;
 
-    public NetworkData(float learningRate, int activationCount, int errorCount, int gradientCount, int batchSize, float beta1, float beta2, float epsilon, int timestep)
+    public NetworkData(float learningRate, int activationCount, int errorCount, int gradientCount, int batchSize,
+        float beta1, float beta2, float epsilon, int timestep)
     {
         LearningRate = learningRate;
         ActivationCount = activationCount;

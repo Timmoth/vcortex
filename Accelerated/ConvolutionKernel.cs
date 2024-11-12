@@ -1,8 +1,5 @@
-﻿using ILGPU;
-
-namespace vcortex.Accelerated;
+﻿namespace vcortex.Accelerated;
 
 public static class ConvolutionKernel
 {
-
 }

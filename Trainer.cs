@@ -6,11 +6,14 @@ namespace vcortex;
 
 public static class Trainer
 {
-    public static void TrainAccelerated(NetworkAccelerator accelerator, List<(float[] imageData, float[] label)> data, int epochs,
+    public static void TrainAccelerated(NetworkAccelerator accelerator, List<(float[] imageData, float[] label)> data,
+        int epochs,
         float learningRate)
     {
         Console.WriteLine("Training network");
-        accelerator.Network.NetworkData = new NetworkData(learningRate, accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.GradientCount, 200, 0.9f, 0.999f, 1e-8f,
+        accelerator.Network.NetworkData = new NetworkData(learningRate, accelerator.Network.NetworkData.ActivationCount,
+            accelerator.Network.NetworkData.ActivationCount, accelerator.Network.NetworkData.GradientCount, 200, 0.9f,
+            0.999f, 1e-8f,
             0);
 
         // Forward Pass
@@ -45,7 +48,8 @@ public static class Trainer
         }
     }
 
-    public static void Test(NetworkAccelerator accelerator, List<(float[] imageData, float[] label)> data, float threshold)
+    public static void Test(NetworkAccelerator accelerator, List<(float[] imageData, float[] label)> data,
+        float threshold)
     {
         Console.WriteLine("Testing network");
         var correct = 0;
@@ -68,7 +72,8 @@ public static class Trainer
 
         var total = correct + incorrect;
         Console.WriteLine("Correct: {0}/{1} ({2}%) in: {3}ms {4}/s", correct, total,
-            XMath.Round(correct / (float)total * 100, 2), stopwatch.ElapsedMilliseconds, XMath.Round(total / (float)stopwatch.Elapsed.TotalSeconds));
+            XMath.Round(correct / (float)total * 100, 2), stopwatch.ElapsedMilliseconds,
+            XMath.Round(total / (float)stopwatch.Elapsed.TotalSeconds));
     }
 
     private static bool IsMultiLabelPredictionCorrect(float[] expected, float[] actual, float threshold)

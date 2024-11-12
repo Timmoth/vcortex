@@ -5,13 +5,13 @@ namespace vcortex.Accelerated;
 
 public class NetworkAcceleratorBuffers : IDisposable
 {
-    public MemoryBuffer1D<float, Stride1D.Dense> Parameters;
     public MemoryBuffer1D<float, Stride1D.Dense> Activations;
-    public MemoryBuffer1D<float, Stride1D.Dense> Gradients;
     public MemoryBuffer1D<float, Stride1D.Dense> Errors;
+    public MemoryBuffer1D<float, Stride1D.Dense> FirstMoment;
+    public MemoryBuffer1D<float, Stride1D.Dense> Gradients;
     public MemoryBuffer1D<float, Stride1D.Dense> Inputs;
     public MemoryBuffer1D<float, Stride1D.Dense> Outputs;
-    public MemoryBuffer1D<float, Stride1D.Dense> FirstMoment;
+    public MemoryBuffer1D<float, Stride1D.Dense> Parameters;
     public MemoryBuffer1D<float, Stride1D.Dense> SecondMoment;
 
     public NetworkAcceleratorBuffers(Accelerator accelerator, Network network)
