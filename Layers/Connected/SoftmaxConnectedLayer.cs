@@ -130,30 +130,30 @@ public class SoftmaxConnectedLayer : IConnectedLayer
     public LayerData LayerData { get; set; }
 
 
-    public void CompileKernels(Accelerator accelerator)
+    public void CompileKernels(NetworkAccelerator accelerator)
     {
         ForwardKernel1 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
                     ForwardKernel1Impl);
 
         ForwardKernel2 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
                     ForwardKernel2Impl);
 
         BackwardKernel1 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
 
         BackwardKernel2 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
 
         GradientAccumulationKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(GradientAccumulationKernelImpl);
     }

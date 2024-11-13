@@ -20,11 +20,13 @@ public readonly struct LayerData
     public readonly int NumKernels;
     public readonly int KernelSize;
     public readonly int PoolSize;
+    public readonly int Stride;
+    public readonly int Padding;
 
     public LayerData(int numInputs, int numOutputs, int activationInputOffset, int activationOutputOffset,
         int gradientOffset, int nextLayerErrorOffset, int currentLayerErrorOffset, int parameterOffset, int biasOffset,
         int inputWidth, int inputHeight, int outputWidth, int outputHeight, int inputChannels, int outputChannels,
-        int numKernels, int kernelSize, int poolSize)
+        int numKernels, int kernelSize, int poolSize, int stride= 0, int padding = 0)
     {
         NumInputs = numInputs;
         NumOutputs = numOutputs;
@@ -44,5 +46,7 @@ public readonly struct LayerData
         NumKernels = numKernels;
         KernelSize = kernelSize;
         PoolSize = poolSize;
+        Stride = stride;
+        Padding = padding;
     }
 }

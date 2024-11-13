@@ -28,8 +28,23 @@ internal class Program
             TrainPath = "../../../mnist_fashion/train.csv",
             TestPath = "../../../mnist_fashion/test.csv",
             Outputs = 10,
-            Epochs = 100,
-            LearningRate = 0.0001f,
+            Epochs = 20,
+            LearningRate = 0.001f,
+            InputDateType = InputDateType.Csv,
+            InputConfig = new ConvolutionInputConfig
+            {
+                Width = 28,
+                Height = 28,
+                Grayscale = true
+            }
+        },
+        new TrainConfig
+        {
+            TrainPath = "../../../mnist_sign/train.csv",
+            TestPath = "../../../mnist_sign/test.csv",
+            Outputs = 25,
+            Epochs = 10,
+            LearningRate = 0.001f,
             InputDateType = InputDateType.Csv,
             InputConfig = new ConvolutionInputConfig
             {
@@ -43,14 +58,14 @@ internal class Program
             TrainPath = "../../../pandas_or_bears/train",
             TestPath = "../../../pandas_or_bears/test",
             Outputs = 2,
-            Epochs = 20,
-            LearningRate = 0.01f,
+            Epochs = 80,
+            LearningRate = 0.001f,
             InputDateType = InputDateType.Directory,
             InputConfig = new ConvolutionInputConfig
             {
                 Width = 64,
                 Height = 64,
-                Grayscale = true
+                Grayscale = false
             }
         }
     };
@@ -58,45 +73,28 @@ internal class Program
     private static void Main(string[] args)
     {
         Console.WriteLine("vcortex");
-        var trainConfig = TrainConfigs[0];
+        var trainConfig = TrainConfigs[1];
 
-        //var net = new NetworkBuilder(trainConfig.InputConfig)
-        //    .Add(new KernelConvolutionLayer(32))
-        //    .Add(new LeakyReLUConvolutionLayer())
-        //    .Add(new MaxPoolingConvolutionLayer(2))
-        //    .Add(new LeakyReluConnectedLayer(32))
-        //    .Add(new LeakyReluConnectedLayer(32))
-        //    .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
-        //    .Build();
-
-        // var net = new NetworkBuilder(trainConfig.InputConfig)
-        //     .Add(new KernelConvolutionLayer(16))
-        //     .Add(new ReLUConvolutionLayer())
-        //     .Add(new MaxPoolingConvolutionLayer(2))
-        //     .Add(new SigmoidConnectedLayer(256))
-        //     .Add(new SigmoidConnectedLayer(128))
-        //     .Add(new SigmoidConnectedLayer(64))
-        //     .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
-        //     .Build(100);
-        
         var net = new NetworkBuilder(trainConfig.InputConfig)
-            .Add(new KernelConvolutionLayer(4))
-             // .Add(new ReLUConvolutionLayer())
-             // .Add(new MaxPoolingConvolutionLayer(2))
-            .Add(new SigmoidConnectedLayer(256))
+            .Add(new KernelConvolutionLayer(1, 0, 32))
+            //.Add(new ReLUConvolutionLayer())
+            .Add(new MaxPoolingConvolutionLayer(2))
+
+            //.Add(new DropoutConnectedLayer(0.1f))
             .Add(new SigmoidConnectedLayer(64))
+            .Add(new DropoutConnectedLayer(0.2f))
             .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
             .Build(100);
 
-        // var convolutionConfig = trainConfig.InputConfig as ConvolutionInputConfig;
-        // var net = new NetworkBuilder(new ConnectedInputConfig()
-        // {
-        //     NumInputs = convolutionConfig.Width * convolutionConfig.Height
-        // })
-        //     .Add(new SigmoidConnectedLayer(256))
-        //     .Add(new SigmoidConnectedLayer(64))
-        //     .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
-        //     .Build(100);
+        //var convolutionConfig = trainConfig.InputConfig as ConvolutionInputConfig;
+        //var net = new NetworkBuilder(new ConnectedInputConfig()
+        //{
+        //    NumInputs = convolutionConfig.Width * convolutionConfig.Height
+        //})
+        //    .Add(new SigmoidConnectedLayer(512))
+        //    .Add(new DropoutConnectedLayer(0.1f))
+        //    .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
+        //    .Build(100);
 
         Console.WriteLine($"parameters: {net.ParameterCount}");
         Console.WriteLine($"activations: {net.ActivationCount}");

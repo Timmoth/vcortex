@@ -180,15 +180,15 @@ public static class DataLoader
         LoadMNIST(TrainConfig config)
     {
         var inputConfig = config.InputConfig as ConvolutionInputConfig;
-        var trainImages = LoadMNISTCsv(config.TrainPath, inputConfig);
-        var testImages = LoadMNISTCsv(config.TestPath, inputConfig);
+        var trainImages = LoadMNISTCsv(config.TrainPath, inputConfig, config);
+        var testImages = LoadMNISTCsv(config.TestPath, inputConfig, config);
         Console.WriteLine("Loaded {0} training and {1} testing images", trainImages.Count, testImages.Count);
 
         return (trainImages, testImages);
     }
 
     private static List<(float[] imageData, float[] label)> LoadMNISTCsv(string filePath,
-        ConvolutionInputConfig inputConfig)
+        ConvolutionInputConfig inputConfig, TrainConfig config)
     {
         var result = new List<(float[] imageData, float[] label)>();
 
@@ -206,7 +206,7 @@ public static class DataLoader
 
             // First column is the label (image label)
             var labelIndex = byte.Parse(columns[0]);
-            var labels = new float[10];
+            var labels = new float[config.Outputs];
             labels[labelIndex] = 1.0f;
 
             // The rest are pixel values (image data)

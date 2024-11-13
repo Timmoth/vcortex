@@ -92,13 +92,13 @@ public class ReLUConvolutionLayer : IConvolutionalLayer
     }
 
 
-    public void CompileKernels(Accelerator accelerator)
+    public void CompileKernels(NetworkAccelerator accelerator)
     {
         _forwardKernel =
-            accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
+            accelerator.accelerator.LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>>(
                 ForwardKernel);
         _backwardKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
                     BackwardKernel);
     }

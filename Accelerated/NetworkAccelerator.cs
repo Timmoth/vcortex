@@ -15,6 +15,8 @@ public class NetworkAccelerator : IDisposable
     private readonly Context context;
     public NetworkAcceleratorBuffers Buffers;
 
+    public bool IsTraining { get; set; }
+
     public Network Network;
 
     public NetworkAccelerator(Network network)
@@ -38,7 +40,7 @@ public class NetworkAccelerator : IDisposable
 
         Buffers = new NetworkAcceleratorBuffers(accelerator, network);
 
-        foreach (var layer in network._layers) layer.CompileKernels(accelerator);
+        foreach (var layer in network._layers) layer.CompileKernels(this);
 
         LoadInputsKernel =
             accelerator
@@ -49,7 +51,7 @@ public class NetworkAccelerator : IDisposable
             accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>>(
-                    LoadOutputs);
+                    CrossEntropyLoss);
 
         var inputLayer = Network._layers[0];
         var inputCount = inputLayer.LayerData.NumInputs * Network.NetworkData.BatchSize;
@@ -79,6 +81,7 @@ public class NetworkAccelerator : IDisposable
 
     public List<float[]> Predict(List<float[]> batchs)
     {
+        IsTraining = false;
         var outputs = new List<float[]>();
         var batchSize = Network.NetworkData.BatchSize;
         var finalLayer = Network._layers[^1];
@@ -132,7 +135,7 @@ public class NetworkAccelerator : IDisposable
             inputs[layerData.NumInputs * batchIndex + inputIndex];
     }
 
-    public static void LoadOutputs(
+    public static void MSE(
         Index1D index,
         NetworkData networkData,
         LayerData layerData,
@@ -154,8 +157,47 @@ public class NetworkAccelerator : IDisposable
         errors[nextErrorOffset + outputIndex] = error;
     }
 
+    public static void CrossEntropyLoss(
+        Index1D index,
+        NetworkData networkData,
+        LayerData layerData,
+        ArrayView<float> outputs,
+        ArrayView<float> activations,
+        ArrayView<float> errors)
+    {
+        // Number of samples in the batch
+        var batchIndex = index / layerData.NumOutputs;
+        var outputIndex = index % layerData.NumOutputs;
+        var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
+        var nextErrorOffset = batchIndex * networkData.ErrorCount + layerData.NextLayerErrorOffset;
+
+        // Get the expected and actual values
+        var expected = outputs[layerData.NumOutputs * batchIndex + outputIndex];
+        var actual = activations[activationOutputOffset + outputIndex];
+
+        // Compute Cross-Entropy loss for each output (assuming outputs are one-hot encoded)
+        // We use a small epsilon to prevent log(0)
+        float epsilon = 1e-15f;
+        var logProb = MathF.Max(actual, epsilon); // Log of the predicted probability (softmax output)
+
+        // Compute the loss for the current sample
+        var loss = -expected * MathF.Log(logProb);
+
+        // Store the loss in the outputs array (you could sum these later for the full batch loss)
+        outputs[layerData.NumOutputs * batchIndex + outputIndex] = loss;
+
+        // Calculate the gradient of the loss w.r.t. the predicted probability (backpropagation)
+        // Derivative of cross-entropy loss with softmax is: p - y
+        var gradient = actual - expected;
+
+        // Store the gradient in the errors array
+        errors[nextErrorOffset + outputIndex] = gradient;
+    }
+
+
     public float Train(List<(float[] inputs, float[] expectedOutputs)> batch)
     {
+        IsTraining = true;
         var stopwatch = Stopwatch.StartNew();
 
         Network.NetworkData = Network.NetworkData.IncrementTimestep();

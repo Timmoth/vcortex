@@ -121,29 +121,29 @@ public class SigmoidConnectedLayer : IConnectedLayer
             accelerator.Buffers.FirstMoment.View, accelerator.Buffers.SecondMoment.View);
     }
 
-    public void CompileKernels(Accelerator accelerator)
+    public void CompileKernels(NetworkAccelerator accelerator)
     {
         ForwardKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
                     ForwardKernelImpl);
         BackwardKernel1 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
 
         BackwardKernel2 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
 
         GradientAccumulationKernel1 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel1Impl);
 
         GradientAccumulationKernel2 =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(GradientAccumulationKernel2Impl);
     }

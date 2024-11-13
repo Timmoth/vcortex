@@ -1,4 +1,5 @@
 using ILGPU;
+using ILGPU.Algorithms;
 using ILGPU.Runtime;
 using vcortex.Accelerated;
 
@@ -6,10 +7,12 @@ namespace vcortex.Layers.Convolution;
 
 public class KernelConvolutionLayer : IConvolutionalLayer
 {
-    public KernelConvolutionLayer(int numKernels, int kernelSize = 3)
+    public KernelConvolutionLayer(int stride, int padding, int numKernels, int kernelSize = 3)
     {
         KernelSize = kernelSize;
         NumKernels = numKernels;
+        Stride = stride;
+        Padding = padding;
     }
 
     public int KernelSize { get; }
@@ -29,8 +32,11 @@ public class KernelConvolutionLayer : IConvolutionalLayer
 
     public int NumInputs => InputWidth * InputHeight * InputChannels;
     public int NumOutputs => OutputWidth * OutputHeight * OutputChannels;
-    public int OutputWidth => InputWidth - KernelSize + 1;
-    public int OutputHeight => InputHeight - KernelSize + 1;
+    public int OutputWidth => (InputWidth - KernelSize + 2 * Padding) / Stride + 1;
+    public int OutputHeight => (InputHeight - KernelSize + 2 * Padding) / Stride + 1;
+
+    public int Padding { get; private set; }
+    public int Stride { get; private set; }
     public int InputWidth { get; private set; }
     public int InputHeight { get; private set; }
     public int InputChannels { get; private set; }
@@ -62,7 +68,7 @@ public class KernelConvolutionLayer : IConvolutionalLayer
 
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
             NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
-            OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0);
+            OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0, Stride, Padding);
     }
     public void Connect(IConvolutionalLayer prevLayer)
     {
@@ -81,7 +87,7 @@ public class KernelConvolutionLayer : IConvolutionalLayer
 
         LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset, GradientOffset,
             NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
-            OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0);
+            OutputHeight, InputChannels, OutputChannels, NumKernels, KernelSize, 0,Stride, Padding);
     }
     
     public virtual void FillRandom(NetworkAccelerator accelerator)
@@ -125,18 +131,18 @@ public class KernelConvolutionLayer : IConvolutionalLayer
     }
 
     #region Kernels
-    public void CompileKernels(Accelerator accelerator)
+    public void CompileKernels(NetworkAccelerator accelerator)
     {
         ForwardKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
                     ForwardKernelImpl);
         BackwardKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
         GradientAccumulationKernel =
-            accelerator
+            accelerator.accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
                     ArrayView<float>, ArrayView<float>>(GradientAccumulationKernelImpl);
     }
@@ -176,19 +182,23 @@ public class KernelConvolutionLayer : IConvolutionalLayer
             var kernelY = j / layerData.KernelSize;
             var kernelX = j % layerData.KernelSize;
 
-            // Calculate corresponding input coordinates for (kernelY, kernelX)
-            var inputY = y + kernelY;
-            var inputX = x + kernelX;
+            // Adjust input coordinates to account for stride and padding
+            var inputY = y * layerData.Stride + kernelY - layerData.Padding;
+            var inputX = x * layerData.Stride + kernelX - layerData.Padding;
 
-            var pixelIndex = ic_pixel_offset + inputY * layerData.InputWidth + inputX;
-            sum += activations[activationInputOffset + pixelIndex] * parameters[kernelOffset + j];
+            // Check for out-of-bounds input coordinates due to padding
+            if (inputY >= 0 && inputY < layerData.InputHeight && inputX >= 0 && inputX < layerData.InputWidth)
+            {
+                var pixelIndex = ic_pixel_offset + inputY * layerData.InputWidth + inputX;
+                sum += activations[activationInputOffset + pixelIndex] * parameters[kernelOffset + j];
+            }
         }
 
         // Calculate total output position for this batch, kernel, height, width, and channel
         var outputIndex = y * layerData.OutputWidth + x + oc * layerData.OutputWidth * layerData.OutputHeight;
         
         // Store the result in the output activations
-        activations[activationOutputOffset + outputIndex] = sum;
+        activations[activationOutputOffset + outputIndex] = XMath.Max(0.0f, sum);
     }
 
     public static void BackwardKernelImpl(
@@ -234,18 +244,24 @@ public class KernelConvolutionLayer : IConvolutionalLayer
             var kernelY = j / layerData.KernelSize;
             var kernelX = j % layerData.KernelSize;
 
-            var inputY = y + kernelY;
-            var inputX = x + kernelX;
+            var inputY = y * layerData.Stride + kernelY - layerData.Padding;
+            var inputX = x * layerData.Stride + kernelX - layerData.Padding;
 
-            var pixelIndex = ic_pixel_offset + inputY * layerData.InputWidth + inputX;
+            if (inputY >= 0 && inputY < layerData.InputHeight && inputX >= 0 && inputX < layerData.InputWidth)
+            {
+                var pixelIndex = ic_pixel_offset + inputY * layerData.InputWidth + inputX;
 
-            // Accumulate the gradient
-            gradients[
-                gradientOffset + oc * kernelSize +
-                j] = error * activations[activationInputOffset + pixelIndex];
+                // Perform the backward pass logic with the adjusted pixelIndex
+                var outputActivation = activations[activationInputOffset + pixelIndex];
+                var derivative = outputActivation > 0 ? 1.0f : 0.0f;
+                var delta = errors[nextErrorOffset + outputIndex] * derivative;
 
-            // Propagate error to the current layer
-            Atomic.Add(ref errors[currentErrorOffset + pixelIndex], error * parameters[kernelOffset + j]);
+                // Accumulate the gradient
+                gradients[gradientOffset + oc * kernelSize + j] = delta * activations[activationInputOffset + pixelIndex];
+
+                // Propagate error to the current layer
+                Atomic.Add(ref errors[currentErrorOffset + pixelIndex], delta * parameters[kernelOffset + j]);
+            }
         }
     }
 

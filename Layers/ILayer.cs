@@ -28,5 +28,5 @@ public interface ILayer
     public void Backward(NetworkAccelerator accelerator);
     public void AccumulateGradients(NetworkAccelerator accelerator);
 
-    public void CompileKernels(Accelerator accelerator);
+    public void CompileKernels(NetworkAccelerator accelerator);
 }
