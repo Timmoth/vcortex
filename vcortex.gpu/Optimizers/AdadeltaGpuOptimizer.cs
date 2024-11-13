@@ -1,6 +1,5 @@
 using ILGPU;
 using ILGPU.Runtime;
-using vcortex.Network;
 using vcortex.Optimizers;
 
 namespace vcortex.gpu.Optimizers;
@@ -8,21 +7,18 @@ namespace vcortex.gpu.Optimizers;
 public class AdadeltaOptimizer : IOptimizer
 {
     private readonly AdaDelta _adaDelta;
-    private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedGradients;
-    private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedUpdates;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _accumulatedGradients;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _accumulatedUpdates;
 
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
-
-    public AdadeltaOptimizer(AdaDelta adaDelta)
+    private readonly NetworkTrainer _trainer;
+    public AdadeltaOptimizer(AdaDelta adaDelta, NetworkTrainer trainer)
     {
         _adaDelta = adaDelta;
-    }
-
-    public void Compile(NetworkTrainer trainer)
-    {
+        _trainer = trainer;
         _optimizerKernelInput = new OptimizerKernelInput
         {
             BatchSize = trainer.Buffers.BatchSize,
@@ -39,11 +35,11 @@ public class AdadeltaOptimizer : IOptimizer
                     ArrayView<float>, ArrayView<float>>(AdadeltaOptimizerKernelImpl);
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    public void Optimize(float learningRate)
     {
         _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
-            buffers.Gradients.View, _accumulatedGradients.View, _accumulatedUpdates.View);
+        _optimizerKernel(_trainer.Network.NetworkData.ParameterCount, _optimizerKernelInput, _trainer.Buffers.Parameters.View,
+            _trainer.Buffers.Gradients.View, _accumulatedGradients.View, _accumulatedUpdates.View);
     }
 
     public void Dispose()

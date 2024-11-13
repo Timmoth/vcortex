@@ -1,3 +1,4 @@
+using vcortex.gpu.Optimizers;
 using vcortex.Network;
 using vcortex.Optimizers;
 
@@ -12,12 +13,13 @@ public class SgdOptimizer : IOptimizer
         _sgd = sgd;
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
-    {
-
-    }
 
     public void Dispose()
     {
+    }
+
+    public void Optimize(float learningRate)
+    {
+        throw new NotImplementedException();
     }
 }

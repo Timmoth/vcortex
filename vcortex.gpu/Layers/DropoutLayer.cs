@@ -2,19 +2,55 @@
 using ILGPU.Algorithms.Random;
 using ILGPU.Runtime;
 using vcortex.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu.Layers;
 
 public class DropoutLayer : IConnectedLayer
 {
     private readonly Dropout _dropout;
+    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly Accelerator _accelerator;
     private BackwardKernelInputs _backwardKernelInputs;
 
     private ForwardKernelInputs _forwardKernelInputs;
-
-    public DropoutLayer(Dropout dropout)
+    public bool IsTraining { get; set; }
+    public DropoutLayer(Dropout dropout, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _dropout = dropout;
+        _buffers = buffers;
+        _accelerator = accelerator;
+
+        _forwardKernelInputs = new ForwardKernelInputs
+        {
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _dropout.ActivationInputOffset,
+            NumOutputs = _dropout.NumOutputs,
+            ActivationOutputOffset = _dropout.ActivationOutputOffset,
+            DropRate = _dropout.DropoutRate
+        };
+        _backwardKernelInputs = new BackwardKernelInputs
+        {
+            ActivationCount = networkData.ActivationCount,
+            NumOutputs = _dropout.NumOutputs,
+            CurrentLayerErrorOffset = _dropout.CurrentLayerErrorOffset,
+            NextLayerErrorOffset = _dropout.NextLayerErrorOffset,
+            DropRate = _dropout.DropoutRate
+        };
+
+        Mask = accelerator.Allocate1D<float>(_dropout.NumOutputs);
+
+        var random = new Random();
+        Rng = RNG.Create<XorShift64Star>(accelerator, random);
+
+        _forwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    ForwardKernel);
+        _backwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    BackwardKernel);
     }
 
     public Layer Config => _dropout;
@@ -39,64 +75,30 @@ public class DropoutLayer : IConnectedLayer
 
     #region Kernels
 
-    private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;
-    private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>> _backwardKernel;
-    private MemoryBuffer1D<float, Stride1D.Dense> Mask;
-    private RNG<XorShift64Star> Rng;
+    private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;
+    private readonly Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>> _backwardKernel;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> Mask;
+    private readonly RNG<XorShift64Star> Rng;
 
 
-    public void FillRandom(INetworkAgent agent)
+    public void FillRandom()
     {
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
-        Rng.FillUniform(agent.Accelerator.DefaultStream, Mask.View);
+        Rng.FillUniform(_accelerator.DefaultStream, Mask.View);
 
-        _forwardKernelInputs.DropRate = agent.IsTraining ? _dropout.DropoutRate : 0.0f;
-        _forwardKernel(agent.Buffers.BatchSize * _dropout.NumOutputs, _forwardKernelInputs,
-            agent.Buffers.Activations.View, Mask.View);
+        _forwardKernelInputs.DropRate = IsTraining ? _dropout.DropoutRate : 0.0f;
+        _forwardKernel(_buffers.BatchSize * _dropout.NumOutputs, _forwardKernelInputs,
+            _buffers.Activations.View, Mask.View);
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
-        _backwardKernelInputs.DropRate = trainer.IsTraining ? _dropout.DropoutRate : 0.0f;
-        _backwardKernel(trainer.Buffers.BatchSize * _dropout.NumOutputs,
-            _backwardKernelInputs, trainer.Buffers.Errors.View, Mask.View);
-    }
-
-    public void CompileKernels(INetworkAgent agent)
-    {
-        _forwardKernelInputs = new ForwardKernelInputs
-        {
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _dropout.ActivationInputOffset,
-            NumOutputs = _dropout.NumOutputs,
-            ActivationOutputOffset = _dropout.ActivationOutputOffset,
-            DropRate = _dropout.DropoutRate
-        };
-        _backwardKernelInputs = new BackwardKernelInputs
-        {
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            NumOutputs = _dropout.NumOutputs,
-            CurrentLayerErrorOffset = _dropout.CurrentLayerErrorOffset,
-            NextLayerErrorOffset = _dropout.NextLayerErrorOffset,
-            DropRate = _dropout.DropoutRate
-        };
-
-        Mask = agent.Accelerator.Allocate1D<float>(_dropout.NumOutputs);
-
-        var random = new Random();
-        Rng = RNG.Create<XorShift64Star>(agent.Accelerator, random);
-
-        _forwardKernel =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    ForwardKernel);
-        _backwardKernel =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    BackwardKernel);
+        _backwardKernelInputs.DropRate = IsTraining ? _dropout.DropoutRate : 0.0f;
+        _backwardKernel(_buffers.BatchSize * _dropout.NumOutputs,
+            _backwardKernelInputs, _buffers.Errors.View, Mask.View);
     }
 
     public static void ForwardKernel(

@@ -2,19 +2,61 @@ using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
 using vcortex.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu.Layers;
 
 public class MaxPoolLayer : IConvolutionalLayer
 {
     private readonly Maxpool _maxpool;
-    private BackwardKernelInputs _backwardKernelInputs;
+    private readonly BackwardKernelInputs _backwardKernelInputs;
 
-    private ForwardKernelInputs _forwardKernelInputs;
+    private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    public MaxPoolLayer(Maxpool maxpool)
+    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly Accelerator _accelerator;
+    public MaxPoolLayer(Maxpool maxpool, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _maxpool = maxpool;
+        _buffers = buffers;
+        _accelerator = accelerator;
+
+        _forwardKernelInputs = new ForwardKernelInputs
+        {
+            ParameterOffset = _maxpool.ParameterOffset,
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _maxpool.ActivationInputOffset,
+            ActivationOutputOffset = _maxpool.ActivationOutputOffset,
+            InputWidth = _maxpool.InputWidth,
+            InputHeight = _maxpool.InputHeight,
+            OutputWidth = _maxpool.OutputWidth,
+            OutputHeight = _maxpool.OutputHeight,
+            InputChannels = _maxpool.InputChannels,
+            PoolSize = _maxpool.PoolSize
+        };
+        _backwardKernelInputs = new BackwardKernelInputs
+        {
+            ParameterOffset = _maxpool.ParameterOffset,
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _maxpool.ActivationInputOffset,
+            CurrentLayerErrorOffset = _maxpool.CurrentLayerErrorOffset,
+            ParameterCount = networkData.ParameterCount,
+            NextLayerErrorOffset = _maxpool.NextLayerErrorOffset,
+            InputWidth = _maxpool.InputWidth,
+            InputHeight = _maxpool.InputHeight,
+            OutputWidth = _maxpool.OutputWidth,
+            OutputHeight = _maxpool.OutputHeight,
+            InputChannels = _maxpool.InputChannels,
+            PoolSize = _maxpool.PoolSize
+        };
+
+        _forwardKernel =
+            accelerator.LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>>(
+                ForwardKernel);
+        _backwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    BackwardKernel);
     }
 
     public Layer Config => _maxpool;
@@ -51,68 +93,30 @@ public class MaxPoolLayer : IConvolutionalLayer
 
     #region Kernels
 
-    private Action<Index1D, ForwardKernelInputs, ArrayView<float>> _forwardKernel;
+    private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>> _forwardKernel;
 
-    private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>> _backwardKernel;
+    private readonly Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>> _backwardKernel;
 
-    public void CompileKernels(INetworkAgent agent)
-    {
-        _forwardKernelInputs = new ForwardKernelInputs
-        {
-            ParameterOffset = _maxpool.ParameterOffset,
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _maxpool.ActivationInputOffset,
-            ActivationOutputOffset = _maxpool.ActivationOutputOffset,
-            InputWidth = _maxpool.InputWidth,
-            InputHeight = _maxpool.InputHeight,
-            OutputWidth = _maxpool.OutputWidth,
-            OutputHeight = _maxpool.OutputHeight,
-            InputChannels = _maxpool.InputChannels,
-            PoolSize = _maxpool.PoolSize
-        };
-        _backwardKernelInputs = new BackwardKernelInputs
-        {
-            ParameterOffset = _maxpool.ParameterOffset,
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _maxpool.ActivationInputOffset,
-            CurrentLayerErrorOffset = _maxpool.CurrentLayerErrorOffset,
-            ParameterCount = agent.Network.NetworkData.ParameterCount,
-            NextLayerErrorOffset = _maxpool.NextLayerErrorOffset,
-            InputWidth = _maxpool.InputWidth,
-            InputHeight = _maxpool.InputHeight,
-            OutputWidth = _maxpool.OutputWidth,
-            OutputHeight = _maxpool.OutputHeight,
-            InputChannels = _maxpool.InputChannels,
-            PoolSize = _maxpool.PoolSize
-        };
-
-        _forwardKernel =
-            agent.Accelerator.LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>>(
-                ForwardKernel);
-        _backwardKernel =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    BackwardKernel);
-    }
-
-    public void FillRandom(INetworkAgent agent)
+    public void FillRandom()
     {
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
         _forwardKernel(
-            agent.Buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
-            _maxpool.OutputWidth, _forwardKernelInputs, agent.Buffers.Activations.View);
+            _buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
+            _maxpool.OutputWidth, _forwardKernelInputs, _buffers.Activations.View);
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
         _backwardKernel(
-            trainer.Buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
-            _maxpool.OutputWidth, _backwardKernelInputs, trainer.Buffers.Activations.View,
-            trainer.Buffers.Errors.View);
+            _buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
+            _maxpool.OutputWidth, _backwardKernelInputs, _buffers.Activations.View,
+            _buffers.Errors.View);
     }
+
+    public bool IsTraining { get; set; }
 
     public static void ForwardKernel(
         Index1D index,

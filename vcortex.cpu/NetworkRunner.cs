@@ -1,4 +1,5 @@
 ﻿using vcortex.cpu.Layers;
+using vcortex.Layers;
 using vcortex.Network;
 
 namespace vcortex.cpu;
@@ -50,7 +51,7 @@ public class NetworkRunner : INetworkAgent
 
             foreach (var layer in _layers)
             {
-                layer.Forward(this);
+                layer.Forward();
             }
 
             for (var i = 0; i < batch.Count; i++)

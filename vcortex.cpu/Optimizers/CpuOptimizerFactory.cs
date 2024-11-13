@@ -1,4 +1,5 @@
-﻿using vcortex.Optimizers;
+﻿using vcortex.gpu.Optimizers;
+using vcortex.Optimizers;
 
 namespace vcortex.cpu.Optimizers;
 

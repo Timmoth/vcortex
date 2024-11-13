@@ -2,24 +2,73 @@ using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
 using vcortex.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu.Layers;
 
 public class KernelConvolutionLayer : IConvolutionalLayer
 {
     private readonly Convolution _convolution;
-    private BackwardKernelInputs _backwardKernelInputs;
+    private readonly BackwardKernelInputs _backwardKernelInputs;
 
-    private ForwardKernelInputs _forwardKernelInputs;
+    private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    public KernelConvolutionLayer(Convolution convolution)
-    {
-        _convolution = convolution;
-    }
-
+    private readonly NetworkAcceleratorBuffers _buffers;
     public Layer Config => _convolution;
 
-    public virtual void FillRandom(INetworkAgent agent)
+    public KernelConvolutionLayer(Convolution convolution, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    {
+        _convolution = convolution;
+        _buffers = buffers;
+
+        _forwardKernelInputs = new ForwardKernelInputs
+        {
+            ParameterOffset = _convolution.ParameterOffset,
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _convolution.ActivationInputOffset,
+            ActivationOutputOffset = _convolution.ActivationOutputOffset,
+            ActivationType = (int)_convolution.Activation,
+            InputWidth = _convolution.InputWidth,
+            InputHeight = _convolution.InputHeight,
+            OutputWidth = _convolution.OutputWidth,
+            OutputHeight = _convolution.OutputHeight,
+            InputChannels = _convolution.InputChannels,
+            NumKernels = _convolution.KernelsPerChannel,
+            KernelSize = _convolution.KernelSize,
+            Stride = _convolution.Stride,
+            Padding = _convolution.Padding
+        };
+        _backwardKernelInputs = new BackwardKernelInputs
+        {
+            ParameterOffset = _convolution.ParameterOffset,
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _convolution.ActivationInputOffset,
+            CurrentLayerErrorOffset = _convolution.CurrentLayerErrorOffset,
+            ParameterCount = networkData.ParameterCount,
+            NextLayerErrorOffset = _convolution.NextLayerErrorOffset,
+            ActivationType = (int)_convolution.Activation,
+            InputWidth = _convolution.InputWidth,
+            InputHeight = _convolution.InputHeight,
+            OutputWidth = _convolution.OutputWidth,
+            OutputHeight = _convolution.OutputHeight,
+            InputChannels = _convolution.InputChannels,
+            NumKernels = _convolution.KernelsPerChannel,
+            KernelSize = _convolution.KernelSize,
+            Stride = _convolution.Stride,
+            Padding = _convolution.Padding
+        };
+
+        _forwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    ForwardKernelImpl);
+        _backwardKernel =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
+    }
+
+    public virtual void FillRandom()
     {
         var parameters = new float[_convolution.ParameterCount];
 
@@ -28,27 +77,29 @@ public class KernelConvolutionLayer : IConvolutionalLayer
         for (var i = 0; i < _convolution.ParameterCount; i++)
             parameters[i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
 
-        agent.Buffers.Parameters.View.SubView(_convolution.ParameterOffset, _convolution.ParameterCount)
+        _buffers.Parameters.View.SubView(_convolution.ParameterOffset, _convolution.ParameterCount)
             .CopyFromCPU(parameters);
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
         _forwardKernel(
-            agent.Buffers.BatchSize * _convolution.KernelsPerChannel * _convolution.OutputHeight *
+            _buffers.BatchSize * _convolution.KernelsPerChannel * _convolution.OutputHeight *
             _convolution.OutputWidth * _convolution.InputChannels, _forwardKernelInputs,
-            agent.Buffers.Parameters.View, agent.Buffers.Activations.View);
+            _buffers.Parameters.View, _buffers.Activations.View);
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
         _backwardKernel(
-            trainer.Buffers.BatchSize * _convolution.KernelsPerChannel * _convolution.OutputHeight *
+            _buffers.BatchSize * _convolution.KernelsPerChannel * _convolution.OutputHeight *
             _convolution.OutputWidth * _convolution.InputChannels, _backwardKernelInputs,
-            trainer.Buffers.Parameters.View, trainer.Buffers.Activations.View,
-            trainer.Buffers.Gradients.View,
-            trainer.Buffers.Errors.View);
+            _buffers.Parameters.View, _buffers.Activations.View,
+            _buffers.Gradients.View,
+            _buffers.Errors.View);
     }
+
+    public bool IsTraining { get; set; }
 
     public struct ForwardKernelInputs
     {
@@ -89,61 +140,10 @@ public class KernelConvolutionLayer : IConvolutionalLayer
     }
 
     #region Kernels
+    private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;
 
-    private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;
-
-    private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    private readonly Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _backwardKernel;
-
-    public void CompileKernels(INetworkAgent agent)
-    {
-        _forwardKernelInputs = new ForwardKernelInputs
-        {
-            ParameterOffset = _convolution.ParameterOffset,
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _convolution.ActivationInputOffset,
-            ActivationOutputOffset = _convolution.ActivationOutputOffset,
-            ActivationType = (int)_convolution.Activation,
-            InputWidth = _convolution.InputWidth,
-            InputHeight = _convolution.InputHeight,
-            OutputWidth = _convolution.OutputWidth,
-            OutputHeight = _convolution.OutputHeight,
-            InputChannels = _convolution.InputChannels,
-            NumKernels = _convolution.KernelsPerChannel,
-            KernelSize = _convolution.KernelSize,
-            Stride = _convolution.Stride,
-            Padding = _convolution.Padding
-        };
-        _backwardKernelInputs = new BackwardKernelInputs
-        {
-            ParameterOffset = _convolution.ParameterOffset,
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _convolution.ActivationInputOffset,
-            CurrentLayerErrorOffset = _convolution.CurrentLayerErrorOffset,
-            ParameterCount = agent.Network.NetworkData.ParameterCount,
-            NextLayerErrorOffset = _convolution.NextLayerErrorOffset,
-            ActivationType = (int)_convolution.Activation,
-            InputWidth = _convolution.InputWidth,
-            InputHeight = _convolution.InputHeight,
-            OutputWidth = _convolution.OutputWidth,
-            OutputHeight = _convolution.OutputHeight,
-            InputChannels = _convolution.InputChannels,
-            NumKernels = _convolution.KernelsPerChannel,
-            KernelSize = _convolution.KernelSize,
-            Stride = _convolution.Stride,
-            Padding = _convolution.Padding
-        };
-
-        _forwardKernel =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    ForwardKernelImpl);
-        _backwardKernel =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernelImpl);
-    }
-
 
     public static void ForwardKernelImpl(
         Index1D index,

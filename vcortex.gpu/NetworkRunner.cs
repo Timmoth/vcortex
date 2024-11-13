@@ -3,6 +3,7 @@ using ILGPU.Runtime;
 using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
 using vcortex.gpu.Layers;
+using vcortex.Layers;
 using vcortex.Network;
 
 namespace vcortex.gpu;
@@ -16,7 +17,6 @@ public class NetworkRunner : INetworkAgent
     public NetworkRunner(NetworkConfig network, int batchSize)
     {
         Network = network;
-        _layers = network.Layers.Select(GpuLayerFactory.Create).ToArray();
 
         context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
 
@@ -36,7 +36,7 @@ public class NetworkRunner : INetworkAgent
 
         Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
 
-        foreach (var layer in _layers) layer.CompileKernels(this);
+        _layers = network.Layers.Select(l => GpuLayerFactory.Create(Buffers, Accelerator, network.NetworkData, l)).ToArray();
 
         LoadInputsKernel =
             Accelerator
@@ -88,7 +88,7 @@ public class NetworkRunner : INetworkAgent
 
             foreach (var layer in _layers)
             {
-                layer.Forward(this);
+                layer.Forward();
                 Accelerator.Synchronize();
             }
 

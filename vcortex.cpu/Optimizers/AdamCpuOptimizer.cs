@@ -1,3 +1,4 @@
+using vcortex.gpu.Optimizers;
 using vcortex.Network;
 using vcortex.Optimizers;
 
@@ -17,8 +18,18 @@ public class AdamOptimizer : IOptimizer
         Timestep++;
     }
 
+    public void Optimize(float learningRate)
+    {
+        throw new NotImplementedException();
+    }
+
     public void Reset()
     {
         Timestep = 0;
+    }
+
+    public void Dispose()
+    {
+        throw new NotImplementedException();
     }
 }

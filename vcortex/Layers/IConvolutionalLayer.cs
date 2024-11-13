@@ -1,4 +1,5 @@
-namespace vcortex.cpu.Layers;
+
+namespace vcortex.Layers;
 
 public interface IConvolutionalLayer : ILayer
 {

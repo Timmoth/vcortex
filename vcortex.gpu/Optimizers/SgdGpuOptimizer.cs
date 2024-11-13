@@ -8,17 +8,16 @@ namespace vcortex.gpu.Optimizers;
 public class SgdOptimizer : IOptimizer
 {
     private readonly Sgd _sgd;
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>> _optimizerKernel;
+    private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>> _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
+    private readonly NetworkTrainer _trainer;
 
-    public SgdOptimizer(Sgd sgd)
+    public SgdOptimizer(Sgd sgd, NetworkTrainer trainer)
     {
         _sgd = sgd;
-    }
+        _trainer = trainer;
 
-    public void Compile(NetworkTrainer trainer)
-    {
         _optimizerKernelInput = new OptimizerKernelInput
         {
             BatchSize = trainer.Buffers.BatchSize,
@@ -31,11 +30,11 @@ public class SgdOptimizer : IOptimizer
                     SGDOptimizerKernelImpl);
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    public void Optimize(float learningRate)
     {
         _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
-            buffers.Gradients.View);
+        _optimizerKernel(_trainer.Network.NetworkData.ParameterCount, _optimizerKernelInput, _trainer.Buffers.Parameters.View,
+            _trainer.Buffers.Gradients.View);
     }
 
     public void Dispose()

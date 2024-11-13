@@ -12,18 +12,20 @@ public class SoftmaxConnectedLayer : IConnectedLayer
     }
 
     public Layer Config => _softmax;
-
-    public virtual void FillRandom(INetworkAgent agent)
+    public void FillRandom()
     {
-       
+        throw new NotImplementedException();
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
+        throw new NotImplementedException();
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
-      
+        throw new NotImplementedException();
     }
+
+    public bool IsTraining { get; set; }
 }

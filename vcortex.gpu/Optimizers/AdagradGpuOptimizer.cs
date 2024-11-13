@@ -1,6 +1,5 @@
 using ILGPU;
 using ILGPU.Runtime;
-using vcortex.Network;
 using vcortex.Optimizers;
 
 namespace vcortex.gpu.Optimizers;
@@ -8,20 +7,18 @@ namespace vcortex.gpu.Optimizers;
 public class AdagradOptimizer : IOptimizer
 {
     private readonly AdaGrad _adaGrad;
-    private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedSquares;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _accumulatedSquares;
 
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>
+    private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>
         _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
 
-    public AdagradOptimizer(AdaGrad adaGrad)
+    private readonly NetworkTrainer _trainer;
+    public AdagradOptimizer(AdaGrad adaGrad, NetworkTrainer trainer)
     {
         _adaGrad = adaGrad;
-    }
-
-    public void Compile(NetworkTrainer trainer)
-    {
+        _trainer = trainer;
         _optimizerKernelInput = new OptimizerKernelInput
         {
             BatchSize = trainer.Buffers.BatchSize,
@@ -36,11 +33,11 @@ public class AdagradOptimizer : IOptimizer
                     ArrayView<float>>(AdagradOptimizerKernelImpl);
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    public void Optimize(float learningRate)
     {
         _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
-            buffers.Gradients.View, _accumulatedSquares.View);
+        _optimizerKernel(_trainer.Network.NetworkData.ParameterCount, _optimizerKernelInput, _trainer.Buffers.Parameters.View,
+            _trainer.Buffers.Gradients.View, _accumulatedSquares.View);
     }
 
     public void Dispose()

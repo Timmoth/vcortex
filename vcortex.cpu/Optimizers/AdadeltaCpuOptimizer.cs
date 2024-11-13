@@ -1,3 +1,4 @@
+using vcortex.gpu.Optimizers;
 using vcortex.Network;
 using vcortex.Optimizers;
 
@@ -12,8 +13,13 @@ public class AdadeltaOptimizer : IOptimizer
         _adaDelta = adaDelta;
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    public void Dispose()
     {
+        throw new NotImplementedException();
+    }
 
+    public void Optimize(float learningRate)
+    {
+        throw new NotImplementedException();
     }
 }

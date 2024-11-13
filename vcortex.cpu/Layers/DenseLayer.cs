@@ -12,23 +12,20 @@ public class DenseLayer : IConnectedLayer
     }
 
     public Layer Config => _dense;
-
-
-    #region Kernel
-
-    public virtual void FillRandom(INetworkAgent agent)
+    public void FillRandom()
     {
-
+        throw new NotImplementedException();
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
-
+        throw new NotImplementedException();
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
+        throw new NotImplementedException();
     }
 
-    #endregion
+    public bool IsTraining { get; set; }
 }

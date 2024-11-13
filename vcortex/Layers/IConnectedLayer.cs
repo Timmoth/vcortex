@@ -1,4 +1,4 @@
-namespace vcortex.gpu.Layers;
+namespace vcortex.Layers;
 
 public interface IConnectedLayer : ILayer
 {

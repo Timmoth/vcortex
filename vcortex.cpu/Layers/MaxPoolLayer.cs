@@ -12,22 +12,20 @@ public class MaxPoolLayer : IConvolutionalLayer
     }
 
     public Layer Config => _maxpool;
-    
-    #region Kernels
-
-    public void FillRandom(INetworkAgent agent)
+    public void FillRandom()
     {
+        throw new NotImplementedException();
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
-
+        throw new NotImplementedException();
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
-
+        throw new NotImplementedException();
     }
 
-    #endregion
+    public bool IsTraining { get; set; }
 }

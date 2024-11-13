@@ -2,24 +2,72 @@ using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
 using vcortex.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu.Layers;
 
 public class SoftmaxConnectedLayer : IConnectedLayer
 {
     private readonly Softmax _softmax;
-    private BackwardKernelInputs _backwardKernelInputs;
+    private readonly BackwardKernelInputs _backwardKernelInputs;
 
-    private ForwardKernelInputs _forwardKernelInputs;
+    private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    public SoftmaxConnectedLayer(Softmax softmax)
+    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly Accelerator _accelerator;
+    public SoftmaxConnectedLayer(Softmax softmax, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
+        _buffers = buffers;
+        _accelerator = accelerator;
         _softmax = softmax;
+
+        _forwardKernelInputs = new ForwardKernelInputs
+        {
+            ActivationCount = networkData.ActivationCount,
+            ActivationInputOffset = _softmax.ActivationInputOffset,
+            NumOutputs = _softmax.NumOutputs,
+            ActivationOutputOffset = _softmax.ActivationOutputOffset,
+            NumInputs = _softmax.NumInputs,
+            ParameterOffset = _softmax.ParameterOffset,
+            BiasOffset = _softmax.BiasOffset
+        };
+        _backwardKernelInputs = new BackwardKernelInputs
+        {
+            ActivationCount = networkData.ActivationCount,
+            NumOutputs = _softmax.NumOutputs,
+            CurrentLayerErrorOffset = _softmax.CurrentLayerErrorOffset,
+            NextLayerErrorOffset = _softmax.NextLayerErrorOffset,
+            BiasOffset = _softmax.BiasOffset,
+            NumInputs = _softmax.NumInputs,
+            ActivationInputOffset = _softmax.ActivationInputOffset,
+            ParameterCount = networkData.ParameterCount,
+            ParameterOffset = _softmax.ParameterOffset
+        };
+
+        _forwardKernel1 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    ForwardKernel1Impl);
+
+        _forwardKernel2 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
+                    ForwardKernel2Impl);
+
+        _backwardKernel1 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
+
+        _backwardKernel2 =
+            accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
     }
 
     public Layer Config => _softmax;
 
-    public virtual void FillRandom(INetworkAgent agent)
+    public virtual void FillRandom()
     {
         var parameters = new float[_softmax.ParameterCount];
 
@@ -28,34 +76,36 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         for (var i = 0; i < _softmax.ParameterCount; i++)
             parameters[i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
 
-        agent.Buffers.Parameters.View.SubView(_softmax.ParameterOffset, _softmax.ParameterCount)
+        _buffers.Parameters.View.SubView(_softmax.ParameterOffset, _softmax.ParameterCount)
             .CopyFromCPU(parameters);
     }
 
-    public void Forward(INetworkAgent agent)
+    public void Forward()
     {
-        _forwardKernel1(_softmax.NumOutputs * agent.Buffers.BatchSize,
-            _forwardKernelInputs, agent.Buffers.Parameters.View,
-            agent.Buffers.Activations.View);
-        agent.Accelerator.Synchronize();
+        _forwardKernel1(_softmax.NumOutputs * _buffers.BatchSize,
+            _forwardKernelInputs, _buffers.Parameters.View,
+            _buffers.Activations.View);
+        _accelerator.Synchronize();
 
-        _forwardKernel2(agent.Buffers.BatchSize, _forwardKernelInputs,
-            agent.Buffers.Parameters.View, agent.Buffers.Activations.View);
+        _forwardKernel2(_buffers.BatchSize, _forwardKernelInputs,
+            _buffers.Parameters.View, _buffers.Activations.View);
     }
 
-    public void Backward(NetworkTrainer trainer)
+    public void Backward()
     {
-        _backwardKernel1(_softmax.NumOutputs * _softmax.NumInputs * trainer.Buffers.BatchSize,
-            _backwardKernelInputs, trainer.Buffers.Parameters.View,
-            trainer.Buffers.Activations.View, trainer.Buffers.Gradients.View,
-            trainer.Buffers.Errors.View);
-        trainer.Accelerator.Synchronize();
+        _backwardKernel1(_softmax.NumOutputs * _softmax.NumInputs * _buffers.BatchSize,
+            _backwardKernelInputs, _buffers.Parameters.View,
+            _buffers.Activations.View, _buffers.Gradients.View,
+            _buffers.Errors.View);
+        _accelerator.Synchronize();
 
-        _backwardKernel2(_softmax.NumOutputs * trainer.Buffers.BatchSize,
-            _backwardKernelInputs, trainer.Buffers.Parameters.View,
-            trainer.Buffers.Activations.View, trainer.Buffers.Gradients.View,
-            trainer.Buffers.Errors.View);
+        _backwardKernel2(_softmax.NumOutputs * _buffers.BatchSize,
+            _backwardKernelInputs, _buffers.Parameters.View,
+            _buffers.Activations.View, _buffers.Gradients.View,
+            _buffers.Errors.View);
     }
+
+    public bool IsTraining { get; set; }
 
     public struct ForwardKernelInputs
     {
@@ -84,62 +134,15 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
     #region Kernels
 
-    private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel1;
+    private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel1;
 
-    private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel2;
+    private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel2;
 
-    private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    private readonly Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _backwardKernel1;
 
-    private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    private readonly Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _backwardKernel2;
-
-
-    public void CompileKernels(INetworkAgent agent)
-    {
-        _forwardKernelInputs = new ForwardKernelInputs
-        {
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = _softmax.ActivationInputOffset,
-            NumOutputs = _softmax.NumOutputs,
-            ActivationOutputOffset = _softmax.ActivationOutputOffset,
-            NumInputs = _softmax.NumInputs,
-            ParameterOffset = _softmax.ParameterOffset,
-            BiasOffset = _softmax.BiasOffset
-        };
-        _backwardKernelInputs = new BackwardKernelInputs
-        {
-            ActivationCount = agent.Network.NetworkData.ActivationCount,
-            NumOutputs = _softmax.NumOutputs,
-            CurrentLayerErrorOffset = _softmax.CurrentLayerErrorOffset,
-            NextLayerErrorOffset = _softmax.NextLayerErrorOffset,
-            BiasOffset = _softmax.BiasOffset,
-            NumInputs = _softmax.NumInputs,
-            ActivationInputOffset = _softmax.ActivationInputOffset,
-            ParameterCount = agent.Network.NetworkData.ParameterCount,
-            ParameterOffset = _softmax.ParameterOffset
-        };
-
-        _forwardKernel1 =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    ForwardKernel1Impl);
-
-        _forwardKernel2 =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
-                    ForwardKernel2Impl);
-
-        _backwardKernel1 =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernel1Impl);
-
-        _backwardKernel2 =
-            agent.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
-    }
 
     public static void ForwardKernel1Impl(
         Index1D index,

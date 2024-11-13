@@ -4,27 +4,27 @@ namespace vcortex.gpu.Optimizers;
 
 public static class GpuOptimizerFactory
 {
-    public static IOptimizer Create(OptimizerConfig optimizer)
+    public static IOptimizer Create(OptimizerConfig optimizer, NetworkTrainer trainer)
     {
         switch (optimizer)
         {
             case AdaDelta config:
-                return new AdadeltaOptimizer(config);
+                return new AdadeltaOptimizer(config, trainer);
 
             case AdaGrad config:
-                return new AdagradOptimizer(config);
+                return new AdagradOptimizer(config, trainer);
 
             case Adam config:
-                return new AdamOptimizer(config);
+                return new AdamOptimizer(config, trainer);
 
             case RmsProp config:
-                return new RMSpropOptimizer(config);
+                return new RMSpropOptimizer(config, trainer);
 
             case Sgd config:
-                return new SgdOptimizer(config);
+                return new SgdOptimizer(config, trainer);
 
             case SgdMomentum config:
-                return new SGDWithMomentumOptimizer(config);
+                return new SGDWithMomentumOptimizer(config, trainer);
 
             default:
                 throw new ArgumentException($"Unsupported optimizer type: {optimizer.GetType().Name}");

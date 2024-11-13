@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using vcortex.cpu.Layers;
 using vcortex.cpu.Optimizers;
+using vcortex.gpu.Optimizers;
+using vcortex.Layers;
 using vcortex.LearningRate;
 using vcortex.Network;
 using vcortex.Optimizers;
@@ -49,7 +51,7 @@ public class NetworkTrainer : INetworkAgent
 
     public void InitRandomWeights()
     {
-        foreach (var networkLayer in _layers) networkLayer.FillRandom(this);
+        foreach (var networkLayer in _layers) networkLayer.FillRandom();
     }
 
     private List<float[]> Predict(List<float[]> batchs)
@@ -70,7 +72,7 @@ public class NetworkTrainer : INetworkAgent
 
             foreach (var layer in _layers)
             {
-                layer.Forward(this);
+                layer.Forward();
             }
 
             for (var i = 0; i < batch.Count; i++)
@@ -102,7 +104,7 @@ public class NetworkTrainer : INetworkAgent
      
         foreach (var layer in _layers)
         {
-            layer.Forward(this);
+            layer.Forward();
         }
 
         var finalLayer = _layers[^1];
@@ -116,10 +118,10 @@ public class NetworkTrainer : INetworkAgent
         // Backward Pass
         for (var i = _layers.Length - 1; i >= 0; i--)
         {
-            _layers[i].Backward(this);
+            _layers[i].Backward();
         }
 
-        _optimizer.Optimize(Network.NetworkData, Buffers, learningRate);
+        _optimizer.Optimize(learningRate);
 
         //Console.WriteLine($" final sync: {stopwatch.ElapsedMilliseconds}ms");
         stopwatch.Restart();

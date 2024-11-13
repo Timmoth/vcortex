@@ -1,3 +1,4 @@
+using vcortex.gpu.Optimizers;
 using vcortex.Network;
 using vcortex.Optimizers;
 
@@ -11,7 +12,14 @@ public class SGDWithMomentumOptimizer : IOptimizer
     {
         _sgdMomentum = sgdMomentum;
     }
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+
+    public void Dispose()
     {
+        throw new NotImplementedException();
+    }
+
+    public void Optimize(float learningRate)
+    {
+        throw new NotImplementedException();
     }
 }

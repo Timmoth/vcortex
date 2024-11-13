@@ -9,22 +9,21 @@ public class AdamOptimizer : IOptimizer
 {
     private readonly Adam _adam;
 
-    private MemoryBuffer1D<float, Stride1D.Dense> _firstMoment;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _firstMoment;
 
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+    private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
-    private MemoryBuffer1D<float, Stride1D.Dense> _secondMoment;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _secondMoment;
     public int Timestep;
+    private readonly NetworkTrainer _trainer;
 
-    public AdamOptimizer(Adam adam)
+    public AdamOptimizer(Adam adam, NetworkTrainer trainer)
     {
         _adam = adam;
-    }
+        _trainer = trainer;
 
-    public void Compile(NetworkTrainer trainer)
-    {
         _optimizerKernelInput = new OptimizerKernelInput
         {
             BatchSize = trainer.Buffers.BatchSize,
@@ -43,15 +42,15 @@ public class AdamOptimizer : IOptimizer
                     ArrayView<float>, ArrayView<float>>(AdamOptimizerKernelImpl);
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    public void Optimize(float learningRate)
     {
         Timestep++;
         _optimizerKernelInput.LearningRate = learningRate;
         _optimizerKernelInput.BiasCorrection1 = 1 - MathF.Pow(_optimizerKernelInput.Beta1, Timestep);
         _optimizerKernelInput.BiasCorrection2 = 1 - MathF.Pow(_optimizerKernelInput.Beta2, Timestep);
 
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
-            buffers.Gradients.View, _firstMoment.View, _secondMoment.View);
+        _optimizerKernel(_trainer.Network.NetworkData.ParameterCount, _optimizerKernelInput, _trainer.Buffers.Parameters.View,
+            _trainer.Buffers.Gradients.View, _firstMoment.View, _secondMoment.View);
     }
 
     public void Reset()

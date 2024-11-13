@@ -1,6 +1,5 @@
 using ILGPU;
 using ILGPU.Runtime;
-using vcortex.Network;
 using vcortex.Optimizers;
 
 namespace vcortex.gpu.Optimizers;
@@ -8,20 +7,19 @@ namespace vcortex.gpu.Optimizers;
 public class RMSpropOptimizer : IOptimizer
 {
     private readonly RmsProp _rmsProp;
-    private MemoryBuffer1D<float, Stride1D.Dense> _movingAverageOfSquares;
+    private readonly MemoryBuffer1D<float, Stride1D.Dense> _movingAverageOfSquares;
 
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>
+    private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>
         _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
+    private readonly NetworkTrainer _trainer;
 
-    public RMSpropOptimizer(RmsProp rmsProp)
+    public RMSpropOptimizer(RmsProp rmsProp, NetworkTrainer trainer)
     {
         _rmsProp = rmsProp;
-    }
+        _trainer = trainer;
 
-    public void Compile(NetworkTrainer trainer)
-    {
         _optimizerKernelInput = new OptimizerKernelInput
         {
             BatchSize = trainer.Buffers.BatchSize,
@@ -38,11 +36,12 @@ public class RMSpropOptimizer : IOptimizer
                     ArrayView<float>>(RMSpropOptimizerKernelImpl);
     }
 
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+
+    public void Optimize(float learningRate)
     {
         _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
-            buffers.Gradients.View, _movingAverageOfSquares.View);
+        _optimizerKernel(_trainer.Network.NetworkData.ParameterCount, _optimizerKernelInput, _trainer.Buffers.Parameters.View,
+            _trainer.Buffers.Gradients.View, _movingAverageOfSquares.View);
     }
 
     public void Dispose()

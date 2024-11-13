@@ -6,6 +6,7 @@ using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
 using vcortex.gpu.Layers;
 using vcortex.gpu.Optimizers;
+using vcortex.Layers;
 using vcortex.LearningRate;
 using vcortex.Network;
 using vcortex.Optimizers;
@@ -32,8 +33,6 @@ public class NetworkTrainer : INetworkAgent
     {
         Network = network;
 
-        _layers = network.Layers.Select(GpuLayerFactory.Create).ToArray();
-        _optimizer = GpuOptimizerFactory.Create(optimizer);
         _context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
 
         var useCuda = true;
@@ -52,9 +51,8 @@ public class NetworkTrainer : INetworkAgent
 
         Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
 
-        foreach (var layer in _layers) layer.CompileKernels(this);
-
-        _optimizer.Compile(this);
+        _layers = network.Layers.Select(l => GpuLayerFactory.Create(Buffers, Accelerator, network.NetworkData, l)).ToArray();
+        _optimizer = GpuOptimizerFactory.Create(optimizer, this);
 
         _loadInputsKernel =
             Accelerator
@@ -95,7 +93,7 @@ public class NetworkTrainer : INetworkAgent
 
     public void InitRandomWeights()
     {
-        foreach (var networkLayer in _layers) networkLayer.FillRandom(this);
+        foreach (var networkLayer in _layers) networkLayer.FillRandom();
     }
 
     private List<float[]> Predict(List<float[]> batchs)
@@ -120,7 +118,7 @@ public class NetworkTrainer : INetworkAgent
 
             foreach (var layer in _layers)
             {
-                layer.Forward(this);
+                layer.Forward();
                 Accelerator.Synchronize();
             }
 
@@ -230,7 +228,7 @@ public class NetworkTrainer : INetworkAgent
             Buffers.Activations.View, inputLayer.Config.NumInputs);
         foreach (var layer in _layers)
         {
-            layer.Forward(this);
+            layer.Forward();
             Accelerator.Synchronize();
         }
 
@@ -251,11 +249,11 @@ public class NetworkTrainer : INetworkAgent
         // Backward Pass
         for (var i = _layers.Length - 1; i >= 0; i--)
         {
-            _layers[i].Backward(this);
+            _layers[i].Backward();
             Accelerator.Synchronize();
         }
 
-        _optimizer.Optimize(Network.NetworkData, Buffers, learningRate);
+        _optimizer.Optimize(learningRate);
         Accelerator.Synchronize();
 
         //Console.WriteLine($" final sync: {stopwatch.ElapsedMilliseconds}ms");
@@ -266,6 +264,11 @@ public class NetworkTrainer : INetworkAgent
 
     public void TrainAccelerated(List<(float[] imageData, float[] label)> data, TrainConfig trainConfig)
     {
+        foreach (var layer in _layers)
+        {
+            layer.IsTraining = true;
+        }
+
         Console.WriteLine("Training network");
         Reset();
 
@@ -312,6 +315,11 @@ public class NetworkTrainer : INetworkAgent
     public void Test(List<(float[] imageData, float[] label)> data,
         float threshold)
     {
+        foreach (var layer in _layers)
+        {
+            layer.IsTraining = false;
+        }
+
         Console.WriteLine("Testing network");
 
         var correct = 0;
