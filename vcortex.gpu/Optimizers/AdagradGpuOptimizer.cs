@@ -7,17 +7,47 @@ namespace vcortex.gpu.Optimizers;
 
 public class AdagradOptimizer : IOptimizer
 {
-    private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedSquares;
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>> _optimizerKernel;
-
-    public struct OptimizerKernelInput
-    {
-        public int BatchSize { get; set; }
-        public int ParameterCount { get; set; }
-        public float Epsilon { get; set; }
-        public float LearningRate { get; set; }
-    }
     private readonly AdaGrad _adaGrad;
+    private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedSquares;
+
+    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>
+        _optimizerKernel;
+
+    private OptimizerKernelInput _optimizerKernelInput;
+
+    public AdagradOptimizer(AdaGrad adaGrad)
+    {
+        _adaGrad = adaGrad;
+    }
+
+    public void Compile(NetworkTrainer trainer)
+    {
+        _optimizerKernelInput = new OptimizerKernelInput
+        {
+            BatchSize = trainer.Buffers.BatchSize,
+            Epsilon = _adaGrad.Epsilon,
+            ParameterCount = trainer.Network.NetworkData.ParameterCount,
+            LearningRate = 0.1f
+        };
+        _accumulatedSquares = trainer.Accelerator.Allocate1D<float>(trainer.Network.NetworkData.ParameterCount);
+        _optimizerKernel =
+            trainer.Accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>>(AdagradOptimizerKernelImpl);
+    }
+
+    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    {
+        _optimizerKernelInput.LearningRate = learningRate;
+        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
+            buffers.Gradients.View, _accumulatedSquares.View);
+    }
+
+    public void Dispose()
+    {
+        _accumulatedSquares.Dispose();
+    }
+
     public static void AdagradOptimizerKernelImpl(
         Index1D index,
         OptimizerKernelInput input,
@@ -40,34 +70,12 @@ public class AdagradOptimizer : IOptimizer
         // Update parameter using Adagrad update rule
         parameters[index] -= input.LearningRate * gradientSum / (MathF.Sqrt(accumulatedSquares[index]) + input.Epsilon);
     }
-    
-    private OptimizerKernelInput _optimizerKernelInput;
 
-    public AdagradOptimizer(AdaGrad adaGrad)
+    public struct OptimizerKernelInput
     {
-        _adaGrad = adaGrad;
+        public int BatchSize { get; set; }
+        public int ParameterCount { get; set; }
+        public float Epsilon { get; set; }
+        public float LearningRate { get; set; }
     }
-
-    public void Compile(NetworkTrainer trainer)
-    {
-        _optimizerKernelInput = new OptimizerKernelInput()
-        {
-            BatchSize = trainer.Buffers.BatchSize,
-            Epsilon = _adaGrad.Epsilon,
-            ParameterCount = trainer.Network.ParameterCount,
-            LearningRate = 0.1f
-        };
-        _accumulatedSquares = trainer.Accelerator.Allocate1D<float>(trainer.Network.ParameterCount);
-        _optimizerKernel =
-            trainer.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>>(AdagradOptimizerKernelImpl);
-    }
-
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
-    {
-        _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View, buffers.Gradients.View, _accumulatedSquares.View);
-    }
-
-    public void Dispose() { _accumulatedSquares.Dispose(); }
 }

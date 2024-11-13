@@ -1,103 +1,40 @@
 using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
-using vcortex.Core;
 using vcortex.Core.Layers;
 
 namespace vcortex.gpu.Layers;
 
 public class SoftmaxConnectedLayer : IConnectedLayer
 {
-    public SoftmaxConnectedLayer(int numOutputs)
-    {
-        NumOutputs = numOutputs;
-    }
-
-    public int BiasOffset => NumInputs * NumOutputs;
-
-    public int NumInputs { get; private set; }
-    public int NumOutputs { get; }
-    public int ActivationInputOffset { get; private set; }
-    public int ActivationOutputOffset { get; private set; }
-    public int CurrentLayerErrorOffset { get; private set; }
-    public int NextLayerErrorOffset { get; private set; }
-    public int ParameterCount { get; private set; }
-    public int ParameterOffset { get; private set; }
-    private ForwardKernelInputs _forwardKernelInputs;
+    private readonly Softmax _softmax;
     private BackwardKernelInputs _backwardKernelInputs;
-    public void Connect(ILayer prevLayer)
+
+    private ForwardKernelInputs _forwardKernelInputs;
+
+    public SoftmaxConnectedLayer(Softmax softmax)
     {
-        NumInputs = prevLayer.NumOutputs;
-
-        ParameterCount = NumOutputs * NumInputs + NumOutputs;
-        ParameterOffset = prevLayer.ParameterOffset + prevLayer.ParameterCount;
-
-        ActivationInputOffset = prevLayer.ActivationOutputOffset;
-        ActivationOutputOffset = prevLayer.ActivationOutputOffset + prevLayer.NumOutputs;
-        CurrentLayerErrorOffset = prevLayer.NextLayerErrorOffset;
-        NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
-
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        _softmax = softmax;
     }
 
-    public void Connect(ConnectedInputConfig config)
-    {
-        NumInputs = config.NumInputs;
-
-        ParameterCount = NumOutputs * NumInputs + NumOutputs;
-        ParameterOffset = 0;
-
-        ActivationInputOffset = 0;
-        ActivationOutputOffset = config.NumInputs;
-        CurrentLayerErrorOffset = 0;
-        NextLayerErrorOffset = config.NumInputs;
-
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
-    
-    public struct ForwardKernelInputs
-    {
-        public required int ActivationCount { get; set; }
-        public required int ActivationInputOffset { get; set; }
-        public required int NumOutputs { get; set; }
-        public required int ActivationOutputOffset { get; set; }
-        public required int NumInputs { get; set; }
-        public required int ParameterOffset { get; set; }
-        public required int BiasOffset { get; set; }
-    }
-    
-    public struct BackwardKernelInputs
-    {
-        public required int ActivationCount { get; set; }
-        public required int NumOutputs { get; set; }
-        public required int CurrentLayerErrorOffset { get; set; }
-        public required int NextLayerErrorOffset { get; set; }
-        public required Index1D BiasOffset { get; set; }
-        public required int NumInputs { get; set; }
-        public required int ActivationInputOffset { get; set; }
-        public required int ParameterCount { get; set; }
-        public required int ParameterOffset { get; set; }
-    }
+    public Layer Config => _softmax;
 
     public virtual void FillRandom(INetworkAgent agent)
     {
-        var parameters = new float[ParameterCount];
+        var parameters = new float[_softmax.ParameterCount];
 
         var rnd = Random.Shared;
-        var variance = 1.0f / (ParameterCount);
-        for (var i = 0; i < ParameterCount; i++)
-        {
+        var variance = 1.0f / _softmax.ParameterCount;
+        for (var i = 0; i < _softmax.ParameterCount; i++)
             parameters[i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
-        }
 
-        agent.Buffers.Parameters.View.SubView(LayerData.ParameterOffset, ParameterCount).CopyFromCPU(parameters);
+        agent.Buffers.Parameters.View.SubView(_softmax.ParameterOffset, _softmax.ParameterCount)
+            .CopyFromCPU(parameters);
     }
-    
+
     public void Forward(INetworkAgent agent)
     {
-        _forwardKernel1(LayerData.NumOutputs * agent.Buffers.BatchSize,
+        _forwardKernel1(_softmax.NumOutputs * agent.Buffers.BatchSize,
             _forwardKernelInputs, agent.Buffers.Parameters.View,
             agent.Buffers.Activations.View);
         agent.Accelerator.Synchronize();
@@ -108,22 +45,44 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
     public void Backward(NetworkTrainer trainer)
     {
-        _backwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * trainer.Buffers.BatchSize,
+        _backwardKernel1(_softmax.NumOutputs * _softmax.NumInputs * trainer.Buffers.BatchSize,
             _backwardKernelInputs, trainer.Buffers.Parameters.View,
             trainer.Buffers.Activations.View, trainer.Buffers.Gradients.View,
             trainer.Buffers.Errors.View);
         trainer.Accelerator.Synchronize();
 
-        _backwardKernel2(LayerData.NumOutputs * trainer.Buffers.BatchSize,
+        _backwardKernel2(_softmax.NumOutputs * trainer.Buffers.BatchSize,
             _backwardKernelInputs, trainer.Buffers.Parameters.View,
             trainer.Buffers.Activations.View, trainer.Buffers.Gradients.View,
             trainer.Buffers.Errors.View);
     }
 
-    public LayerData LayerData { get; set; }
+    public struct ForwardKernelInputs
+    {
+        public int ActivationCount { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int NumOutputs { get; set; }
+        public int ActivationOutputOffset { get; set; }
+        public int NumInputs { get; set; }
+        public int ParameterOffset { get; set; }
+        public int BiasOffset { get; set; }
+    }
+
+    public struct BackwardKernelInputs
+    {
+        public int ActivationCount { get; set; }
+        public int NumOutputs { get; set; }
+        public int CurrentLayerErrorOffset { get; set; }
+        public int NextLayerErrorOffset { get; set; }
+        public Index1D BiasOffset { get; set; }
+        public int NumInputs { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int ParameterCount { get; set; }
+        public int ParameterOffset { get; set; }
+    }
+
 
     #region Kernels
-
 
     private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel1;
 
@@ -134,33 +93,33 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
     private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _backwardKernel2;
-    
-    
+
+
     public void CompileKernels(INetworkAgent agent)
     {
         _forwardKernelInputs = new ForwardKernelInputs
         {
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = ActivationInputOffset,
-            NumOutputs = NumOutputs,
-            ActivationOutputOffset = ActivationOutputOffset,
-            NumInputs = NumInputs,
-            ParameterOffset = ParameterOffset,
-            BiasOffset = BiasOffset,
+            ActivationInputOffset = _softmax.ActivationInputOffset,
+            NumOutputs = _softmax.NumOutputs,
+            ActivationOutputOffset = _softmax.ActivationOutputOffset,
+            NumInputs = _softmax.NumInputs,
+            ParameterOffset = _softmax.ParameterOffset,
+            BiasOffset = _softmax.BiasOffset
         };
         _backwardKernelInputs = new BackwardKernelInputs
         {
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            NumOutputs = NumOutputs,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            BiasOffset = BiasOffset,
-            NumInputs = NumInputs,
-            ActivationInputOffset = ActivationInputOffset,
+            NumOutputs = _softmax.NumOutputs,
+            CurrentLayerErrorOffset = _softmax.CurrentLayerErrorOffset,
+            NextLayerErrorOffset = _softmax.NextLayerErrorOffset,
+            BiasOffset = _softmax.BiasOffset,
+            NumInputs = _softmax.NumInputs,
+            ActivationInputOffset = _softmax.ActivationInputOffset,
             ParameterCount = agent.Network.NetworkData.ParameterCount,
-            ParameterOffset = ParameterOffset,
-        };    
-        
+            ParameterOffset = _softmax.ParameterOffset
+        };
+
         _forwardKernel1 =
             agent.Accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
@@ -231,7 +190,7 @@ public class SoftmaxConnectedLayer : IConnectedLayer
             activations[activationOutputOffset + i] = XMath.Exp(activations[activationOutputOffset + i] - maxVal);
             sumExp += activations[activationOutputOffset + i];
         }
-        
+
         if (sumExp <= 0 || float.IsNaN(sumExp) || float.IsInfinity(sumExp))
         {
             var uniformProb = 1.0f / inputs.NumOutputs;
@@ -261,13 +220,14 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         var activationInputOffset = batchIndex * inputs.ActivationCount + inputs.ActivationInputOffset;
         var currentErrorOffset = batchIndex * inputs.ActivationCount + inputs.CurrentLayerErrorOffset;
         var nextErrorOffset = batchIndex * inputs.ActivationCount + inputs.NextLayerErrorOffset;
-        var gradientOffset = batchIndex * inputs.ParameterCount + inputs.ParameterOffset; 
+        var gradientOffset = batchIndex * inputs.ParameterCount + inputs.ParameterOffset;
 
         // Calculate delta for this output neuron
         var delta = errors[nextErrorOffset + outputIndex];
 
         // Compute the gradient contribution for each weight and accumulate errors for backpropagation
-        Atomic.Add(ref errors[currentErrorOffset + inputIndex], delta * parameters[inputs.ParameterOffset + inputs.NumInputs * outputIndex + inputIndex]);
+        Atomic.Add(ref errors[currentErrorOffset + inputIndex],
+            delta * parameters[inputs.ParameterOffset + inputs.NumInputs * outputIndex + inputIndex]);
 
         // Store gradient for the current weight
         gradients[gradientOffset + outputIndex * inputs.NumInputs + inputIndex] =

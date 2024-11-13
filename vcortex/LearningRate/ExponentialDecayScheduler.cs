@@ -1,6 +1,6 @@
 namespace vcortex.LearningRate;
 
-public class ExponentialDecayScheduler: ILearningRateScheduler
+public class ExponentialDecayScheduler : ILearningRateScheduler
 {
     private readonly ExponentialDecay _exponentialDecay;
 

@@ -5,7 +5,9 @@ using ILGPU.Runtime;
 using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
 using vcortex.Core;
+using vcortex.Core.Layers;
 using vcortex.Core.Optimizers;
+using vcortex.gpu.Layers;
 using vcortex.gpu.Optimizers;
 using vcortex.LearningRate;
 
@@ -13,23 +15,24 @@ namespace vcortex.gpu;
 
 public class NetworkTrainer : INetworkAgent
 {
+    private readonly Context _context;
     private readonly float[] _flattenedExpectedOutputs;
 
     private readonly float[] _flattenedInputs;
-    private readonly Accelerator _accelerator;
-    private readonly Context _context;
-    private readonly NetworkAcceleratorBuffers _buffers;
-    private readonly IOptimizer _optimizer;
-    private readonly Network _network;
+    private readonly ILayer[] _layers;
 
-    public Accelerator Accelerator => _accelerator;
-    public Network Network => _network;
-    public NetworkAcceleratorBuffers Buffers => _buffers;
-    public bool IsTraining => true;
-    
-    public NetworkTrainer(Network network, LossFunction lossFunction, OptimizerConfig optimizer, int batchSize)
+    private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int> _loadInputsKernel;
+
+    private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, ArrayView<float>, int, int, int>
+        _lossFunctionKernel;
+
+    private readonly IOptimizer _optimizer;
+
+    public NetworkTrainer(NetworkConfig network, LossFunction lossFunction, OptimizerConfig optimizer, int batchSize)
     {
-        _network = network;
+        Network = network;
+
+        _layers = network.Layers.Select(GpuLayerFactory.Create).ToArray();
         _optimizer = GpuOptimizerFactory.Create(optimizer);
         _context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
 
@@ -38,92 +41,95 @@ public class NetworkTrainer : INetworkAgent
         {
             foreach (var device in _context.GetCudaDevices()) Console.WriteLine(device.Name + " " + device.DeviceId);
 
-            _accelerator = _context.CreateCudaAccelerator(0);
+            Accelerator = _context.CreateCudaAccelerator(0);
         }
         else
         {
             _context = Context.Create(b => { b.Default().EnableAlgorithms().CPU(); });
 
-            _accelerator = _context.CreateCPUAccelerator(0);
+            Accelerator = _context.CreateCPUAccelerator(0);
         }
 
-        _buffers = new NetworkAcceleratorBuffers(_accelerator, network, batchSize);
+        Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
 
-        foreach (var layer in network._layers) layer.CompileKernels(this);
+        foreach (var layer in _layers) layer.CompileKernels(this);
 
         _optimizer.Compile(this);
-        
+
         _loadInputsKernel =
-            _accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>>(
+            Accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int>(
                     LoadInputs);
 
         _lossFunctionKernel =
-            _accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>>(
+            Accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, int, int, int>(
                     lossFunction == LossFunction.Mse ? MSE : CrossEntropyLoss);
 
-        var inputLayer = Network._layers[0];
-        var inputCount = inputLayer.LayerData.NumInputs * _buffers.BatchSize;
+        var inputLayer = _layers[0];
+        var inputCount = inputLayer.Config.NumInputs * Buffers.BatchSize;
         _flattenedInputs = new float[inputCount];
 
-        var outputLayer = Network._layers[^1];
-        var outputCount = outputLayer.LayerData.NumOutputs * _buffers.BatchSize;
+        var outputLayer = _layers[^1];
+        var outputCount = outputLayer.Config.NumOutputs * Buffers.BatchSize;
         _flattenedExpectedOutputs = new float[outputCount];
     }
 
-    private readonly Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>> _loadInputsKernel;
+    public Accelerator Accelerator { get; }
 
-    private readonly Action<Index1D, NetworkData, LayerData, ArrayView<float>, ArrayView<float>, ArrayView<float>>
-        _lossFunctionKernel;
-    
+    public NetworkConfig Network { get; }
+
+    public NetworkAcceleratorBuffers Buffers { get; }
+
+    public bool IsTraining => true;
+
 
     public void Dispose()
     {
-        _accelerator.Dispose();
+        Accelerator.Dispose();
         _context.Dispose();
-        _buffers.Dispose();
+        Buffers.Dispose();
         _optimizer.Dispose();
     }
 
     public void InitRandomWeights()
     {
-        foreach (var networkLayer in _network._layers) networkLayer.FillRandom(this);
+        foreach (var networkLayer in _layers) networkLayer.FillRandom(this);
     }
 
     private List<float[]> Predict(List<float[]> batchs)
     {
         var outputs = new List<float[]>();
-        var batchSize = _buffers.BatchSize;
-        var finalLayer = _network._layers[^1];
+        var batchSize = Buffers.BatchSize;
+        var finalLayer = _layers[^1];
 
         // Divide the data into mini-batches
         for (var batchStart = 0; batchStart < batchs.Count; batchStart += batchSize)
         {
             // Get the current batch
             var batch = batchs.Skip(batchStart).Take(batchSize).ToList();
-            var inputLayer = _network._layers[0];
+            var inputLayer = _layers[0];
             for (var i = 0; i < batch.Count; i++)
-                Array.Copy(batch[i], 0, _flattenedInputs, i * inputLayer.LayerData.NumInputs,
-                    inputLayer.LayerData.NumInputs);
-            
-            _buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
-            _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, inputLayer.LayerData, _buffers.Inputs.View,
-                _buffers.Activations.View);
-            
-            foreach (var layer in _network._layers)
+                Array.Copy(batch[i], 0, _flattenedInputs, i * inputLayer.Config.NumInputs,
+                    inputLayer.Config.NumInputs);
+
+            Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
+            _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
+                Buffers.Activations.View, inputLayer.Config.NumInputs);
+
+            foreach (var layer in _layers)
             {
                 layer.Forward(this);
-                _accelerator.Synchronize();
+                Accelerator.Synchronize();
             }
-            
+
             for (var i = 0; i < batch.Count; i++)
             {
-                var output = new float[finalLayer.NumOutputs];
-                _buffers.Activations.View
-                    .SubView(Network.NetworkData.ActivationCount * i + finalLayer.ActivationOutputOffset,
-                        finalLayer.NumOutputs).CopyToCPU(output);
+                var output = new float[finalLayer.Config.NumOutputs];
+                Buffers.Activations.View
+                    .SubView(Network.NetworkData.ActivationCount * i + finalLayer.Config.ActivationOutputOffset,
+                        finalLayer.Config.NumOutputs).CopyToCPU(output);
                 outputs.Add(output);
             }
         }
@@ -135,68 +141,65 @@ public class NetworkTrainer : INetworkAgent
     public static void LoadInputs(
         Index1D index,
         NetworkData networkData,
-        LayerData layerData,
         ArrayView<float> inputs,
-        ArrayView<float> activations)
+        ArrayView<float> activations, int numInputs)
     {
         // Number of samples in the batch
-        var batchIndex = index / layerData.NumInputs;
-        var inputIndex = index % layerData.NumInputs;
+        var batchIndex = index / numInputs;
+        var inputIndex = index % numInputs;
 
         activations[networkData.ActivationCount * batchIndex + inputIndex] =
-            inputs[layerData.NumInputs * batchIndex + inputIndex];
+            inputs[numInputs * batchIndex + inputIndex];
     }
 
     public static void MSE(
         Index1D index,
         NetworkData networkData,
-        LayerData layerData,
         ArrayView<float> outputs,
         ArrayView<float> activations,
-        ArrayView<float> errors)
+        ArrayView<float> errors, int numOutputs, int activationOutputOffset, int nextLayerErrorOffset)
     {
         // Number of samples in the batch
-        var batchIndex = index / layerData.NumOutputs;
-        var outputIndex = index % layerData.NumOutputs;
-        var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
-        var nextErrorOffset = batchIndex * networkData.ActivationCount + layerData.NextLayerErrorOffset;
+        var batchIndex = index / numOutputs;
+        var outputIndex = index % numOutputs;
+        var activationOutputIndex = batchIndex * networkData.ActivationCount + activationOutputOffset + outputIndex;
+        var nextErrorOffset = batchIndex * networkData.ActivationCount + nextLayerErrorOffset;
 
-        var expected = outputs[layerData.NumOutputs * batchIndex + outputIndex];
-        var actual = activations[activationOutputOffset + outputIndex];
+        var expected = outputs[numOutputs * batchIndex + outputIndex];
+        var actual = activations[activationOutputIndex];
         var error = actual - expected;
 
-        outputs[layerData.NumOutputs * batchIndex + outputIndex] = error * error;
+        outputs[numOutputs * batchIndex + outputIndex] = error * error;
         errors[nextErrorOffset + outputIndex] = error;
     }
 
     public static void CrossEntropyLoss(
         Index1D index,
         NetworkData networkData,
-        LayerData layerData,
         ArrayView<float> outputs,
         ArrayView<float> activations,
-        ArrayView<float> errors)
+        ArrayView<float> errors, int numOutputs, int activationOutputOffset, int nextLayerErrorOffset)
     {
         // Number of samples in the batch
-        var batchIndex = index / layerData.NumOutputs;
-        var outputIndex = index % layerData.NumOutputs;
-        var activationOutputOffset = batchIndex * networkData.ActivationCount + layerData.ActivationOutputOffset;
-        var nextErrorOffset = batchIndex * networkData.ActivationCount + layerData.NextLayerErrorOffset;
+        var batchIndex = index / numOutputs;
+        var outputIndex = index % numOutputs;
+        var activationOutputIndex = batchIndex * networkData.ActivationCount + activationOutputOffset + outputIndex;
+        var nextErrorOffset = batchIndex * networkData.ActivationCount + nextLayerErrorOffset;
 
         // Get the expected and actual values
-        var expected = outputs[layerData.NumOutputs * batchIndex + outputIndex];
-        var actual = activations[activationOutputOffset + outputIndex];
+        var expected = outputs[numOutputs * batchIndex + outputIndex];
+        var actual = activations[activationOutputIndex];
 
         // Compute Cross-Entropy loss for each output (assuming outputs are one-hot encoded)
         // We use a small epsilon to prevent log(0)
-        float epsilon = 1e-15f;
+        var epsilon = 1e-15f;
         var logProb = MathF.Max(actual, epsilon); // Log of the predicted probability (softmax output)
 
         // Compute the loss for the current sample
         var loss = -expected * MathF.Log(logProb);
 
         // Store the loss in the outputs array (you could sum these later for the full batch loss)
-        outputs[layerData.NumOutputs * batchIndex + outputIndex] = loss;
+        outputs[numOutputs * batchIndex + outputIndex] = loss;
 
         // Calculate the gradient of the loss w.r.t. the predicted probability (backpropagation)
         // Derivative of cross-entropy loss with softmax is: p - y
@@ -214,73 +217,74 @@ public class NetworkTrainer : INetworkAgent
     private float Train(List<(float[] inputs, float[] expectedOutputs)> batch, float learningRate)
     {
         var stopwatch = Stopwatch.StartNew();
-        
-        var inputLayer = Network._layers[0];
-        var outputLayer = Network._layers[^1];
+
+        var inputLayer = _layers[0];
+        var outputLayer = _layers[^1];
 
         for (var i = 0; i < batch.Count; i++)
-            Array.Copy(batch[i].inputs, 0, _flattenedInputs, i * inputLayer.LayerData.NumInputs,
-                inputLayer.LayerData.NumInputs);
+            Array.Copy(batch[i].inputs, 0, _flattenedInputs, i * inputLayer.Config.NumInputs,
+                inputLayer.Config.NumInputs);
 
-        _buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
-        _loadInputsKernel(_flattenedInputs.Length, _network.NetworkData, inputLayer.LayerData, _buffers.Inputs.View,
-            _buffers.Activations.View);
-        foreach (var layer in Network._layers)
+        Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
+        _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
+            Buffers.Activations.View, inputLayer.Config.NumInputs);
+        foreach (var layer in _layers)
         {
             layer.Forward(this);
-            _accelerator.Synchronize();
+            Accelerator.Synchronize();
         }
 
-        var finalLayer = _network._layers[^1];
+        var finalLayer = _layers[^1];
 
         for (var i = 0; i < batch.Count; i++)
-            Array.Copy(batch[i].expectedOutputs, 0, _flattenedExpectedOutputs, i * outputLayer.LayerData.NumOutputs,
-                outputLayer.LayerData.NumOutputs);
+            Array.Copy(batch[i].expectedOutputs, 0, _flattenedExpectedOutputs, i * outputLayer.Config.NumOutputs,
+                outputLayer.Config.NumOutputs);
 
-        _buffers.Errors.View.MemSetToZero();
-        _buffers.Outputs.View.CopyFromCPU(_flattenedExpectedOutputs);
-        _lossFunctionKernel(_buffers.BatchSize * outputLayer.LayerData.NumOutputs, _network.NetworkData,
-            outputLayer.LayerData, _buffers.Outputs.View, _buffers.Activations.View, _buffers.Errors.View);
-        _buffers.Outputs.View.CopyToCPU(_flattenedExpectedOutputs);
+        Buffers.Errors.View.MemSetToZero();
+        Buffers.Outputs.View.CopyFromCPU(_flattenedExpectedOutputs);
+        _lossFunctionKernel(Buffers.BatchSize * outputLayer.Config.NumOutputs, Network.NetworkData,
+            Buffers.Outputs.View, Buffers.Activations.View, Buffers.Errors.View, outputLayer.Config.NumOutputs,
+            outputLayer.Config.ActivationOutputOffset, outputLayer.Config.NextLayerErrorOffset);
+        Buffers.Outputs.View.CopyToCPU(_flattenedExpectedOutputs);
         var sampleError = _flattenedExpectedOutputs.Sum();
 
         // Backward Pass
-        for (var i = _network._layers.Length - 1; i >= 0; i--)
+        for (var i = _layers.Length - 1; i >= 0; i--)
         {
-            _network._layers[i].Backward(this);
-            _accelerator.Synchronize();
+            _layers[i].Backward(this);
+            Accelerator.Synchronize();
         }
 
-        _optimizer.Optimize(_network.NetworkData, _buffers, learningRate);
-        _accelerator.Synchronize();
+        _optimizer.Optimize(Network.NetworkData, Buffers, learningRate);
+        Accelerator.Synchronize();
 
         //Console.WriteLine($" final sync: {stopwatch.ElapsedMilliseconds}ms");
         stopwatch.Restart();
-        return sampleError / finalLayer.NumOutputs;
+        return sampleError / finalLayer.Config.NumOutputs;
     }
-    
-    
+
+
     public void TrainAccelerated(List<(float[] imageData, float[] label)> data, TrainConfig trainConfig)
     {
         Console.WriteLine("Training network");
         Reset();
 
         var learningRateScheduler = LearningRateSchedulerFactory.Create(trainConfig.Scheduler);
-        var batchSize = _buffers.BatchSize;
+        var batchSize = Buffers.BatchSize;
         var totalBatches = (int)Math.Ceiling((double)data.Count / batchSize);
 
         var stopwatch = Stopwatch.StartNew();
         for (var epoch = 0; epoch < trainConfig.Epochs; epoch++)
         {
             // Shuffle data in-place with Fisher-Yates for efficiency
-            for (int i = data.Count - 1; i > 0; i--)
+            for (var i = data.Count - 1; i > 0; i--)
             {
-                int j = Random.Shared.Next(i + 1);
+                var j = Random.Shared.Next(i + 1);
                 (data[i], data[j]) = (data[j], data[i]);
             }
 
             float epochError = 0;
-            int sampleCount = 0;
+            var sampleCount = 0;
             var learningRate = learningRateScheduler.GetLearningRate(epoch);
             for (var batch = 0; batch < totalBatches; batch++)
             {
@@ -299,13 +303,14 @@ public class NetworkTrainer : INetworkAgent
             var elapsedTime = stopwatch.ElapsedMilliseconds;
             var samplesPerSec = Math.Round(sampleCount / stopwatch.Elapsed.TotalSeconds);
 
-            Console.WriteLine($"Epoch {epoch}, LR: {learningRate.ToSignificantFigures(3)} Average MSE: {averageMSE.ToSignificantFigures(3)}, Time: {elapsedTime}ms, {samplesPerSec}/s");
+            Console.WriteLine(
+                $"Epoch {epoch}, LR: {learningRate.ToSignificantFigures(3)} Average MSE: {averageMSE.ToSignificantFigures(3)}, Time: {elapsedTime}ms, {samplesPerSec}/s");
             stopwatch.Restart();
         }
     }
-    
+
     public void Test(List<(float[] imageData, float[] label)> data,
-         float threshold)
+        float threshold)
     {
         Console.WriteLine("Testing network");
 
@@ -330,19 +335,15 @@ public class NetworkTrainer : INetworkAgent
 
             // Check if the full set of labels match for subset accuracy
             if (IsSubsetPredictionCorrect(expected, prediction, threshold))
-            {
                 correct++;
-            }
             else
-            {
                 incorrect++;
-            }
 
             // Update confusion matrix statistics for each label
             for (var i = 0; i < expected.Length; i++)
             {
-                bool expectedLabel = expected[i] > threshold;
-                bool predictedLabel = prediction[i] > threshold;
+                var expectedLabel = expected[i] > threshold;
+                var predictedLabel = prediction[i] > threshold;
 
                 if (expectedLabel && predictedLabel)
                     truePositives[i]++;
@@ -356,13 +357,13 @@ public class NetworkTrainer : INetworkAgent
 
             totalLabels += expected.Length;
         }
-        
+
         // Precision, Recall, F1-Score for each label
-        for (int i = 0; i < truePositives.Length; i++)
+        for (var i = 0; i < truePositives.Length; i++)
         {
-            float precision = Precision(truePositives[i], falsePositives[i]);
-            float recall = Recall(truePositives[i], falseNegatives[i]);
-            float f1Score = F1Score(precision, recall);
+            var precision = Precision(truePositives[i], falsePositives[i]);
+            var recall = Recall(truePositives[i], falseNegatives[i]);
+            var f1Score = F1Score(precision, recall);
 
             Console.WriteLine($"Class {i}: Precision: {precision}, Recall: {recall}, F1-Score: {f1Score}");
         }
@@ -380,10 +381,8 @@ public class NetworkTrainer : INetworkAgent
     {
         // Check if all labels for a sample are predicted correctly
         for (var i = 0; i < expected.Length; i++)
-        {
-            if ((expected[i] > threshold) != (actual[i] > threshold))
+            if (expected[i] > threshold != actual[i] > threshold)
                 return false; // If any label is incorrect, return false
-        }
         return true;
     }
 

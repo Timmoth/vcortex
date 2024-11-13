@@ -9,6 +9,5 @@ public interface IOptimizer : IDisposable
 
     public virtual void Reset()
     {
-        
     }
 }

@@ -7,8 +7,8 @@ public static class Utils
         if (value == 0)
             return "0";
 
-        int decimalPlaces = significantFigures - (int)Math.Floor(Math.Log10(Math.Abs(value))) - 1;
-        float roundedValue = (float)Math.Round(value, decimalPlaces, MidpointRounding.AwayFromZero);
+        var decimalPlaces = significantFigures - (int)Math.Floor(Math.Log10(Math.Abs(value))) - 1;
+        var roundedValue = (float)Math.Round(value, decimalPlaces, MidpointRounding.AwayFromZero);
 
         return roundedValue.ToString("G" + significantFigures);
     }

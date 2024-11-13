@@ -2,7 +2,6 @@
 
 public abstract class LearningRateScheduler
 {
-    
 }
 
 public class StepDecay : LearningRateScheduler

@@ -1,6 +1,6 @@
 namespace vcortex.LearningRate;
 
-public class StepDecayScheduler: ILearningRateScheduler
+public class StepDecayScheduler : ILearningRateScheduler
 {
     private readonly StepDecay _stepDecay;
 
@@ -11,7 +11,7 @@ public class StepDecayScheduler: ILearningRateScheduler
 
     public float GetLearningRate(int epoch)
     {
-        int stepCount = epoch / _stepDecay.StepSize;
+        var stepCount = epoch / _stepDecay.StepSize;
         return _stepDecay.InitialLearningRate * MathF.Pow(_stepDecay.DecayFactor, stepCount);
     }
 }

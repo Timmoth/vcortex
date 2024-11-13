@@ -1,16 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
 
-    <ItemGroup>
-      <PackageReference Include="ILGPU" Version="1.5.1" />
-      <PackageReference Include="ILGPU.Algorithms" Version="1.5.1" />
-      <PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
-    </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="vcortex.gpu" />
+		<InternalsVisibleTo Include="vcortex.cpu" />
+		<InternalsVisibleTo Include="vcortex.console" />
+	</ItemGroup>
 
 </Project>

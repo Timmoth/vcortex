@@ -2,7 +2,6 @@
 
 public abstract class OptimizerConfig
 {
-    
 }
 
 public class AdaDelta : OptimizerConfig
@@ -31,8 +30,8 @@ public class RmsProp : OptimizerConfig
 
 public class Sgd : OptimizerConfig
 {
-    
 }
+
 public class SgdMomentum : OptimizerConfig
 {
     public float Momentum { get; set; } = 0.1f;

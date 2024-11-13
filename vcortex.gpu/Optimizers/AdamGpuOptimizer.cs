@@ -7,24 +7,64 @@ namespace vcortex.gpu.Optimizers;
 
 public class AdamOptimizer : IOptimizer
 {
-    public int Timestep = 0;
-    
-    private MemoryBuffer1D<float, Stride1D.Dense> _firstMoment;
-    private MemoryBuffer1D<float, Stride1D.Dense> _secondMoment;
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>> _optimizerKernel;
     private readonly Adam _adam;
-    public struct OptimizerKernelInput
+
+    private MemoryBuffer1D<float, Stride1D.Dense> _firstMoment;
+
+    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> _optimizerKernel;
+
+    private OptimizerKernelInput _optimizerKernelInput;
+    private MemoryBuffer1D<float, Stride1D.Dense> _secondMoment;
+    public int Timestep;
+
+    public AdamOptimizer(Adam adam)
     {
-        public int BatchSize { get; set; }
-        public int ParameterCount { get; set; }
-        public float Beta1 { get; set; }
-        public float Beta2 { get; set; }
-        public float BiasCorrection1 { get; set; }
-        public float BiasCorrection2 { get; set; }
-        public float Epsilon { get; set; }
-        public float LearningRate { get; set; }
+        _adam = adam;
     }
-    
+
+    public void Compile(NetworkTrainer trainer)
+    {
+        _optimizerKernelInput = new OptimizerKernelInput
+        {
+            BatchSize = trainer.Buffers.BatchSize,
+            ParameterCount = trainer.Network.NetworkData.ParameterCount,
+            Beta1 = _adam.Beta1,
+            Beta2 = _adam.Beta2,
+            Epsilon = _adam.Epsilon,
+            BiasCorrection1 = 1 - MathF.Pow(0.9f, Timestep),
+            BiasCorrection2 = 1 - MathF.Pow(0.999f, Timestep)
+        };
+        _firstMoment = trainer.Accelerator.Allocate1D<float>(trainer.Network.NetworkData.ParameterCount);
+        _secondMoment = trainer.Accelerator.Allocate1D<float>(trainer.Network.NetworkData.ParameterCount);
+        _optimizerKernel =
+            trainer.Accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(AdamOptimizerKernelImpl);
+    }
+
+    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    {
+        Timestep++;
+        _optimizerKernelInput.LearningRate = learningRate;
+        _optimizerKernelInput.BiasCorrection1 = 1 - MathF.Pow(_optimizerKernelInput.Beta1, Timestep);
+        _optimizerKernelInput.BiasCorrection2 = 1 - MathF.Pow(_optimizerKernelInput.Beta2, Timestep);
+
+        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
+            buffers.Gradients.View, _firstMoment.View, _secondMoment.View);
+    }
+
+    public void Reset()
+    {
+        Timestep = 0;
+    }
+
+    public void Dispose()
+    {
+        _firstMoment.Dispose();
+        _secondMoment.Dispose();
+    }
+
     public static void AdamOptimizerKernelImpl(
         Index1D index,
         OptimizerKernelInput input,
@@ -34,7 +74,7 @@ public class AdamOptimizer : IOptimizer
         ArrayView<float> secondMoment)
     {
         var batchSize = input.BatchSize;
-        
+
         // Accumulate gradients across the batch for each parameter
         var gradientSum = 0.0f;
         for (var i = 0; i < batchSize; i++) gradientSum += gradients[i * input.ParameterCount + index];
@@ -55,54 +95,16 @@ public class AdamOptimizer : IOptimizer
         // Update parameter using Adam optimizer formula
         parameters[index] -= input.LearningRate * mHat / (MathF.Sqrt(vHat) + input.Epsilon);
     }
-    
-    private OptimizerKernelInput _optimizerKernelInput;
 
-    public AdamOptimizer(Adam adam)
+    public struct OptimizerKernelInput
     {
-        _adam = adam;
-    }
-
-    public void Compile(NetworkTrainer trainer)
-    {
-
-    _optimizerKernelInput = new OptimizerKernelInput()
-    {
-        BatchSize = trainer.Buffers.BatchSize,
-        ParameterCount = trainer.Network.ParameterCount,
-        Beta1 = _adam.Beta1,
-        Beta2 = _adam.Beta2,
-        Epsilon = _adam.Epsilon,
-        BiasCorrection1 = 1 - MathF.Pow(0.9f, Timestep),
-        BiasCorrection2 = 1 - MathF.Pow(0.999f, Timestep),
-    };
-        _firstMoment = trainer.Accelerator.Allocate1D<float>(trainer.Network.ParameterCount);
-        _secondMoment = trainer.Accelerator.Allocate1D<float>(trainer.Network.ParameterCount);
-        _optimizerKernel =
-            trainer.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, ArrayView<float>>(AdamOptimizerKernelImpl);
-        
-    }
-
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
-    {
-        Timestep++;
-        _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernelInput.BiasCorrection1 = 1 - MathF.Pow(_optimizerKernelInput.Beta1, Timestep);
-        _optimizerKernelInput.BiasCorrection2 = 1 - MathF.Pow(_optimizerKernelInput.Beta2, Timestep);
-        
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View, buffers.Gradients.View, _firstMoment.View, _secondMoment.View);
-    }
-
-    public void Reset()
-    {
-        Timestep = 0;
-    }
-
-    public void Dispose()
-    {
-        _firstMoment.Dispose();
-        _secondMoment.Dispose();
+        public int BatchSize { get; set; }
+        public int ParameterCount { get; set; }
+        public float Beta1 { get; set; }
+        public float Beta2 { get; set; }
+        public float BiasCorrection1 { get; set; }
+        public float BiasCorrection2 { get; set; }
+        public float Epsilon { get; set; }
+        public float LearningRate { get; set; }
     }
 }

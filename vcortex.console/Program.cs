@@ -2,11 +2,7 @@
 using vcortex.Core.Layers;
 using vcortex.Core.Optimizers;
 using vcortex.gpu;
-using vcortex.gpu.Layers;
-using vcortex.gpu.Optimizers;
 using vcortex.LearningRate;
-using DenseLayer = vcortex.gpu.Layers.DenseLayer;
-using NetworkBuilder = vcortex.gpu.NetworkBuilder;
 
 namespace vcortex.console;
 
@@ -20,7 +16,7 @@ internal class Program
             TestPath = "../../../../data/mnist_digits/test.csv",
             Outputs = 10,
             Epochs = 10,
-            Scheduler = new ConstantLearningRate()
+            Scheduler = new ConstantLearningRate
             {
                 LearningRate = 0.001f
             },
@@ -39,10 +35,10 @@ internal class Program
             TestPath = "../../../../data/mnist_fashion/test.csv",
             Outputs = 10,
             Epochs = 10,
-            Scheduler = new ExponentialDecay()
+            Scheduler = new ExponentialDecay
             {
                 InitialLearningRate = 0.002f,
-                DecayRate = 0.05f,
+                DecayRate = 0.05f
             },
             Optimizer = new Adam(),
             InputDateType = InputDateType.Csv,
@@ -59,7 +55,7 @@ internal class Program
             TestPath = "../../../../data/mnist_sign/test.csv",
             Outputs = 25,
             Epochs = 10,
-            Scheduler =new ConstantLearningRate()
+            Scheduler = new ConstantLearningRate
             {
                 LearningRate = 0.001f
             },
@@ -78,7 +74,7 @@ internal class Program
             TestPath = "../../../../data/pandas_or_bears/test",
             Outputs = 2,
             Epochs = 10,
-            Scheduler = new ConstantLearningRate()
+            Scheduler = new ConstantLearningRate
             {
                 LearningRate = 0.001f
             },
@@ -96,14 +92,34 @@ internal class Program
     private static void Main(string[] args)
     {
         Console.WriteLine("vcortex");
-        var trainConfig = TrainConfigs[1];
+        var trainConfig = TrainConfigs[3];
 
         var net = new NetworkBuilder(trainConfig.InputConfig)
-            .Add(new KernelConvolutionLayer(1, 1,  32, ActivationType.LeakyRelu))
-            .Add(new MaxPoolLayer(2))
-            .Add(new DenseLayer(256, ActivationType.LeakyRelu))
-            .Add(new DropoutLayer(0.2f))
-            .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
+            .Add(new Convolution
+            {
+                Activation = ActivationType.LeakyRelu,
+                KernelSize = 3,
+                KernelsPerChannel = 16,
+                Padding = 1,
+                Stride = 1
+            })
+            .Add(new Maxpool
+            {
+                PoolSize = 2
+            })
+            .Add(new Dense
+            {
+                Activation = ActivationType.LeakyRelu,
+                Neurons = 128
+            })
+            .Add(new Dropout
+            {
+                DropoutRate = 0.2f
+            })
+            .Add(new Softmax
+            {
+                Neurons = trainConfig.Outputs
+            })
             .Build();
 
         // var convolutionConfig = trainConfig.InputConfig as ConvolutionInputConfig;
@@ -116,20 +132,21 @@ internal class Program
         //     .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
         //     .Build();
 
-        Console.WriteLine($"parameters: {net.ParameterCount}");
-        Console.WriteLine($"activations: {net.ActivationCount}");
+        Console.WriteLine($"parameters: {net.NetworkData.ParameterCount}");
+        Console.WriteLine($"activations: {net.NetworkData.ActivationCount}");
 
         var (train, test) = trainConfig.InputDateType == InputDateType.Csv
             ? DataLoader.LoadMNIST(trainConfig)
             : DataLoader.LoadData(trainConfig);
 
         var accelerator = new NetworkTrainer(net, LossFunction.CrossEntropyLoss, trainConfig.Optimizer, 100);
+        //accelerator.InitRandomWeights();
         accelerator.ReadFromDisk("../../../../data/weights.bin");
 
         accelerator.TrainAccelerated(train, trainConfig);
-        
+
         accelerator.SaveToDisk("../../../../data/weights.bin");
-        
+
         accelerator.Test(test, 0.1f);
     }
 }

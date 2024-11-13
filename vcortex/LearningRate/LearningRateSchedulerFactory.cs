@@ -8,10 +8,10 @@ public static class LearningRateSchedulerFactory
         {
             case ExponentialDecay exponential:
                 return new ExponentialDecayScheduler(exponential);
-            
+
             case StepDecay step:
                 return new StepDecayScheduler(step);
-            
+
             case ConstantLearningRate constant:
                 return new ConstantLearningRateScheduler(constant);
 

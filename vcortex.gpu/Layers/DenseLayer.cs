@@ -1,94 +1,54 @@
 using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
-using vcortex.Core;
 using vcortex.Core.Layers;
 
 namespace vcortex.gpu.Layers;
 
-
 public class DenseLayer : IConnectedLayer
 {
-    public DenseLayer(int numOutputs, ActivationType activationType)
-    {
-        NumOutputs = numOutputs;
-        ActivationType = activationType;
-    }
-
-    public ActivationType ActivationType { get; set; }
-    public int BiasOffset => NumInputs * NumOutputs;
-    
-    public int NumInputs { get; private set; }
-    public int NumOutputs { get; }
-    public int ActivationInputOffset { get; private set; }
-    public int ActivationOutputOffset { get; private set; }
-    public int CurrentLayerErrorOffset { get; private set; }
-    public int NextLayerErrorOffset { get; private set; }
-    public int ParameterCount { get; private set; }
-    public int ParameterOffset { get; private set; }
-    
-    private ForwardKernelInputs _forwardKernelInputs;
+    private readonly Dense _dense;
     private BackwardKernelInputs _backwardKernelInputs;
 
-    public void Connect(ILayer prevLayer)
+
+    private ForwardKernelInputs _forwardKernelInputs;
+
+    public DenseLayer(Dense dense)
     {
-        NumInputs = prevLayer.NumOutputs;
-
-        ParameterCount = NumOutputs * NumInputs + NumOutputs;
-        ParameterOffset = prevLayer.ParameterOffset + prevLayer.ParameterCount;
-
-        ActivationInputOffset = prevLayer.ActivationOutputOffset;
-        ActivationOutputOffset = prevLayer.ActivationOutputOffset + prevLayer.NumOutputs;
-        CurrentLayerErrorOffset = prevLayer.NextLayerErrorOffset;
-        NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
-        
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        _dense = dense;
     }
+
+    public Layer Config => _dense;
+
     public struct ForwardKernelInputs
     {
-        public required int NumInputs { get; set; }
-        public required int ParameterOffset { get; set; }
-        public required int ActivationCount { get; set; }
-        public required int ActivationInputOffset { get; set; }
-        public required int NumOutputs { get; set; }
-        public required int BiasOffset { get; set; }
-        public required int ActivationOutputOffset { get; set; }
-        public required int ActivationType { get; set; }
+        public int NumInputs { get; set; }
+        public int ParameterOffset { get; set; }
+        public int ActivationCount { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int NumOutputs { get; set; }
+        public int BiasOffset { get; set; }
+        public int ActivationOutputOffset { get; set; }
+        public int ActivationType { get; set; }
     }
-    
+
     public struct BackwardKernelInputs
     {
-        public required int NumInputs { get; set; }
-        public required int ParameterOffset { get; set; }
-        public required int ActivationCount { get; set; }
-        public required int ActivationInputOffset { get; set; }
-        public required int NumOutputs { get; set; }
-        public required int BiasOffset { get; set; }
-        public required int ActivationOutputOffset { get; set; }
-        public required int CurrentLayerErrorOffset { get; set; }
-        public required int ParameterCount { get; set; }
-        public required int NextLayerErrorOffset { get; set; }
-        public required int ActivationType { get; set; }
+        public int NumInputs { get; set; }
+        public int ParameterOffset { get; set; }
+        public int ActivationCount { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int NumOutputs { get; set; }
+        public int BiasOffset { get; set; }
+        public int ActivationOutputOffset { get; set; }
+        public int CurrentLayerErrorOffset { get; set; }
+        public int ParameterCount { get; set; }
+        public int NextLayerErrorOffset { get; set; }
+        public int ActivationType { get; set; }
     }
-    public void Connect(ConnectedInputConfig config)
-    {
-        NumInputs = config.NumInputs;
 
-        ParameterCount = NumOutputs * NumInputs + NumOutputs;
-        ParameterOffset = 0;
-
-        ActivationInputOffset = 0;
-        ActivationOutputOffset = config.NumInputs;
-        CurrentLayerErrorOffset = 0;
-        NextLayerErrorOffset = config.NumInputs;
-
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, BiasOffset, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
 
     #region Kernel
-
 
     private Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;
 
@@ -97,66 +57,66 @@ public class DenseLayer : IConnectedLayer
 
     private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>,
         ArrayView<float>> _backwardKernel2;
+
     public virtual void FillRandom(INetworkAgent agent)
     {
-        var parameters = new float[ParameterCount];
+        var parameters = new float[_dense.ParameterCount];
 
         var rnd = Random.Shared;
-        var variance = 1.0f / (ParameterCount);
-        for (var i = 0; i < ParameterCount; i++)
-        {
+        var variance = 1.0f / _dense.ParameterCount;
+        for (var i = 0; i < _dense.ParameterCount; i++)
             parameters[i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
-        }
 
-        agent.Buffers.Parameters.View.SubView(LayerData.ParameterOffset, ParameterCount).CopyFromCPU(parameters);
+        agent.Buffers.Parameters.View.SubView(_dense.ParameterOffset, _dense.ParameterCount).CopyFromCPU(parameters);
     }
 
     public void Forward(INetworkAgent agent)
     {
-        _forwardKernel(LayerData.NumOutputs * agent.Buffers.BatchSize,_forwardKernelInputs, agent.Buffers.Parameters.View, agent.Buffers.Activations.View);
+        _forwardKernel(_dense.NumOutputs * agent.Buffers.BatchSize, _forwardKernelInputs, agent.Buffers.Parameters.View,
+            agent.Buffers.Activations.View);
     }
 
     public void Backward(NetworkTrainer trainer)
     {
-        _backwardKernel1(LayerData.NumOutputs * LayerData.NumInputs * trainer.Buffers.BatchSize,
+        _backwardKernel1(_dense.NumOutputs * _dense.NumInputs * trainer.Buffers.BatchSize,
             _backwardKernelInputs, trainer.Buffers.Parameters.View,
             trainer.Buffers.Activations.View, trainer.Buffers.Gradients.View,
             trainer.Buffers.Errors.View);
         trainer.Accelerator.Synchronize();
-        _backwardKernel2(LayerData.NumOutputs * trainer.Buffers.BatchSize,
+        _backwardKernel2(_dense.NumOutputs * trainer.Buffers.BatchSize,
             _backwardKernelInputs, trainer.Buffers.Activations.View,
             trainer.Buffers.Gradients.View,
             trainer.Buffers.Errors.View);
     }
-    
+
     public void CompileKernels(INetworkAgent agent)
     {
-        _forwardKernelInputs = new ForwardKernelInputs()
+        _forwardKernelInputs = new ForwardKernelInputs
         {
-            NumInputs = NumInputs,
-            ParameterOffset = ParameterOffset,
+            NumInputs = _dense.NumInputs,
+            ParameterOffset = _dense.ParameterOffset,
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = ActivationInputOffset,
-            NumOutputs = NumOutputs,
-            BiasOffset = BiasOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            ActivationType = (int)ActivationType
+            ActivationInputOffset = _dense.ActivationInputOffset,
+            NumOutputs = _dense.NumOutputs,
+            BiasOffset = _dense.BiasOffset,
+            ActivationOutputOffset = _dense.ActivationOutputOffset,
+            ActivationType = (int)_dense.Activation
         };
-        _backwardKernelInputs = new BackwardKernelInputs()
+        _backwardKernelInputs = new BackwardKernelInputs
         {
-            NumInputs = NumInputs,
-            ParameterOffset = ParameterOffset,
+            NumInputs = _dense.NumInputs,
+            ParameterOffset = _dense.ParameterOffset,
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = ActivationInputOffset,
-            NumOutputs = NumOutputs,
-            BiasOffset = BiasOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
+            ActivationInputOffset = _dense.ActivationInputOffset,
+            NumOutputs = _dense.NumOutputs,
+            BiasOffset = _dense.BiasOffset,
+            ActivationOutputOffset = _dense.ActivationOutputOffset,
+            CurrentLayerErrorOffset = _dense.CurrentLayerErrorOffset,
             ParameterCount = agent.Network.NetworkData.ParameterCount,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            ActivationType = (int)ActivationType
-        };    
-        
+            NextLayerErrorOffset = _dense.NextLayerErrorOffset,
+            ActivationType = (int)_dense.Activation
+        };
+
         _forwardKernel =
             agent.Accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>>(
@@ -172,10 +132,6 @@ public class DenseLayer : IConnectedLayer
                     ArrayView<float>, ArrayView<float>>(BackwardKernel2Impl);
     }
 
-    public LayerData LayerData { get; set; }
-
- 
-    
     // Forward pass kernel for calculating activations in a sigmoid layer
     public static void ForwardKernelImpl(
         Index1D index,
@@ -201,23 +157,19 @@ public class DenseLayer : IConnectedLayer
 
         var activation = 0.0f;
         if (inputs.ActivationType == 0)
-        {
             // Sigmoid activation function: 1 / (1 + e^(-x))
             activation = 1.0f / (1.0f + XMath.Exp(-sum));
-        }else  if (inputs.ActivationType == 1)
-        {
+        else if (inputs.ActivationType == 1)
             // ReLU activation function: max(0, x)
             activation = XMath.Max(0.0f, sum);
-        }else  if (inputs.ActivationType == 2)
-        {
+        else if (inputs.ActivationType == 2)
             // Leaky ReLU activation function: max(alpha * x, x)
             activation = XMath.Max(0.1f * sum, sum);
-        }
-        
+
         // Apply sigmoid activation and store the result
         activations[activationOutputOffset + outputIndex] = activation;
     }
-    
+
     // Backward pass kernel 1 for calculating weight gradients and propagating errors
     public static void BackwardKernel1Impl(
         Index1D index,
@@ -243,28 +195,24 @@ public class DenseLayer : IConnectedLayer
         var x = activations[activationOutputOffset + outputIndex];
         var derivative = 0.0f;
         if (inputs.ActivationType == 0)
-        {
             // Sigmoid derivative: x * (1 - x) where x is the sigmoid output
             derivative = x * (1.0f - x);
-        }else  if (inputs.ActivationType == 1)
-        {
+        else if (inputs.ActivationType == 1)
             // ReLU derivative: 1 if x > 0, else 0
             derivative = x > 0 ? 1.0f : 0.0f;
-            
-        }else  if (inputs.ActivationType == 2)
-        {
+        else if (inputs.ActivationType == 2)
             // Leaky ReLU derivative: 1 if x > 0, else alpha
             derivative = x > 0 ? 1.0f : 0.01f;
-        }
-        
+
         var delta = errors[nextErrorOffset + outputIndex] * derivative;
 
         // Compute the offset for weights of this output neuron
         var weightIndex = outputIndex * inputs.NumInputs + inputIndex;
 
         // Atomic update to propagate error back to current layer and accumulate weight gradient
-        Atomic.Add(ref errors[currentErrorOffset + inputIndex], delta * parameters[inputs.ParameterOffset + weightIndex]);
-        
+        Atomic.Add(ref errors[currentErrorOffset + inputIndex],
+            delta * parameters[inputs.ParameterOffset + weightIndex]);
+
         gradients[gradientOffset + weightIndex] = delta * activations[activationInputOffset + inputIndex];
     }
 
@@ -288,20 +236,15 @@ public class DenseLayer : IConnectedLayer
         var x = activations[activationOutputOffset + outputIndex];
         var derivative = 0.0f;
         if (inputs.ActivationType == 0)
-        {
             // Sigmoid derivative: x * (1 - x) where x is the sigmoid output
             derivative = x * (1.0f - x);
-        }else  if (inputs.ActivationType == 1)
-        {
+        else if (inputs.ActivationType == 1)
             // ReLU derivative: 1 if x > 0, else 0
             derivative = x > 0 ? 1.0f : 0.0f;
-            
-        }else  if (inputs.ActivationType == 2)
-        {
+        else if (inputs.ActivationType == 2)
             // Leaky ReLU derivative: 1 if x > 0, else alpha
             derivative = x > 0 ? 1.0f : 0.01f;
-        }
-        
+
         var delta = errors[nextErrorOffset + outputIndex] * derivative;
 
         // Update bias gradient for this neuron

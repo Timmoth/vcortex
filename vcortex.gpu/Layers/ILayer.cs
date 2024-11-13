@@ -1,20 +1,10 @@
-using vcortex.Core;
+using vcortex.Core.Layers;
 
 namespace vcortex.gpu.Layers;
 
 public interface ILayer
 {
-    public int NumInputs { get; }
-    public int NumOutputs { get; }
-    public int ActivationInputOffset { get; }
-    public int ActivationOutputOffset { get; }
-    public int CurrentLayerErrorOffset { get; }
-    public int NextLayerErrorOffset { get; }
-    public int ParameterCount { get; }
-    public int ParameterOffset { get; }
-
-    public LayerData LayerData { get; set; }
-
+    public Layer Config { get; }
     public void FillRandom(INetworkAgent agent);
 
     public void Forward(INetworkAgent agent);

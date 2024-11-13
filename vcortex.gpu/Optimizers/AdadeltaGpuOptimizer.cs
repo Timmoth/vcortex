@@ -7,21 +7,51 @@ namespace vcortex.gpu.Optimizers;
 
 public class AdadeltaOptimizer : IOptimizer
 {
+    private readonly AdaDelta _adaDelta;
     private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedGradients;
     private MemoryBuffer1D<float, Stride1D.Dense> _accumulatedUpdates;
-    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>> _optimizerKernel;
 
-    private readonly AdaDelta _adaDelta;
-    
-    public struct OptimizerKernelInput
+    private Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>,
+        ArrayView<float>> _optimizerKernel;
+
+    private OptimizerKernelInput _optimizerKernelInput;
+
+    public AdadeltaOptimizer(AdaDelta adaDelta)
     {
-        public int BatchSize { get; set; }
-        public int ParameterCount { get; set; }
-        public float Rho { get; set; }
-        public float Epsilon { get; set; }
-        public float LearningRate { get; set; }
+        _adaDelta = adaDelta;
     }
-    
+
+    public void Compile(NetworkTrainer trainer)
+    {
+        _optimizerKernelInput = new OptimizerKernelInput
+        {
+            BatchSize = trainer.Buffers.BatchSize,
+            ParameterCount = trainer.Network.NetworkData.ParameterCount,
+            Rho = _adaDelta.Rho,
+            Epsilon = _adaDelta.Epsilon,
+            LearningRate = 0.1f
+        };
+        _accumulatedGradients = trainer.Accelerator.Allocate1D<float>(trainer.Network.NetworkData.ParameterCount);
+        _accumulatedUpdates = trainer.Accelerator.Allocate1D<float>(trainer.Network.NetworkData.ParameterCount);
+        _optimizerKernel =
+            trainer.Accelerator
+                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>,
+                    ArrayView<float>, ArrayView<float>>(AdadeltaOptimizerKernelImpl);
+    }
+
+    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
+    {
+        _optimizerKernelInput.LearningRate = learningRate;
+        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View,
+            buffers.Gradients.View, _accumulatedGradients.View, _accumulatedUpdates.View);
+    }
+
+    public void Dispose()
+    {
+        _accumulatedGradients.Dispose();
+        _accumulatedUpdates.Dispose();
+    }
+
     public static void AdadeltaOptimizerKernelImpl(
         Index1D index,
         OptimizerKernelInput input,
@@ -38,10 +68,12 @@ public class AdadeltaOptimizer : IOptimizer
         gradientSum /= input.BatchSize;
 
         // Update accumulated gradients
-        accumulatedGradients[index] = input.Rho * accumulatedGradients[index] + (1 - input.Rho) * gradientSum * gradientSum;
+        accumulatedGradients[index] =
+            input.Rho * accumulatedGradients[index] + (1 - input.Rho) * gradientSum * gradientSum;
 
         // Compute update step
-        var updateStep = MathF.Sqrt(accumulatedUpdates[index] + input.Epsilon) / MathF.Sqrt(accumulatedGradients[index] + input.Epsilon);
+        var updateStep = MathF.Sqrt(accumulatedUpdates[index] + input.Epsilon) /
+                         MathF.Sqrt(accumulatedGradients[index] + input.Epsilon);
 
         // Update accumulated updates
         accumulatedUpdates[index] = input.Rho * accumulatedUpdates[index] + (1 - input.Rho) * gradientSum * gradientSum;
@@ -49,39 +81,13 @@ public class AdadeltaOptimizer : IOptimizer
         // Update parameter using Adadelta update rule
         parameters[index] -= input.LearningRate * updateStep;
     }
-    private OptimizerKernelInput _optimizerKernelInput;
 
-    public AdadeltaOptimizer(AdaDelta adaDelta)
+    public struct OptimizerKernelInput
     {
-        _adaDelta = adaDelta;
-    }
-
-    public void Compile(NetworkTrainer trainer)
-    {
-        _optimizerKernelInput = new OptimizerKernelInput()
-        {
-            BatchSize = trainer.Buffers.BatchSize,
-            ParameterCount = trainer.Network.ParameterCount,
-            Rho = _adaDelta.Rho,
-            Epsilon = _adaDelta.Epsilon,
-            LearningRate = 0.1f
-        };
-        _accumulatedGradients = trainer.Accelerator.Allocate1D<float>(trainer.Network.ParameterCount);
-        _accumulatedUpdates = trainer.Accelerator.Allocate1D<float>(trainer.Network.ParameterCount);
-        _optimizerKernel =
-            trainer.Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>>(AdadeltaOptimizerKernelImpl);
-    }
-
-    public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate)
-    {
-        _optimizerKernelInput.LearningRate = learningRate;
-        _optimizerKernel(networkData.ParameterCount, _optimizerKernelInput, buffers.Parameters.View, buffers.Gradients.View, _accumulatedGradients.View, _accumulatedUpdates.View);
-    }
-
-    public void Dispose() 
-    { 
-        _accumulatedGradients.Dispose(); 
-        _accumulatedUpdates.Dispose(); 
+        public int BatchSize { get; set; }
+        public int ParameterCount { get; set; }
+        public float Rho { get; set; }
+        public float Epsilon { get; set; }
+        public float LearningRate { get; set; }
     }
 }

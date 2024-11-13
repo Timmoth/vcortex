@@ -1,146 +1,91 @@
 using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
-using vcortex.Core;
 using vcortex.Core.Layers;
 
 namespace vcortex.gpu.Layers;
 
 public class MaxPoolLayer : IConvolutionalLayer
 {
-    public MaxPoolLayer(int poolSize)
+    private readonly Maxpool _maxpool;
+    private BackwardKernelInputs _backwardKernelInputs;
+
+    private ForwardKernelInputs _forwardKernelInputs;
+
+    public MaxPoolLayer(Maxpool maxpool)
     {
-        PoolSize = poolSize;
+        _maxpool = maxpool;
     }
 
-    public int PoolSize { get; }
-    
-    public int OutputWidth => InputWidth / PoolSize;
-    public int OutputHeight => InputHeight / PoolSize;
+    public Layer Config => _maxpool;
 
-    public int NumInputs => InputWidth * InputHeight * InputChannels;
-    public int NumOutputs => OutputWidth * OutputHeight * OutputChannels;
-
-    public int InputWidth { get; private set; }
-    public int InputHeight { get; private set; }
-    public int InputChannels { get; private set; }
-    public int OutputChannels { get; private set; }
-    public int ActivationInputOffset { get; private set; }
-    public int ActivationOutputOffset { get; private set; }
-    public int CurrentLayerErrorOffset { get; private set; }
-    public int NextLayerErrorOffset { get; private set; }
-    public int ParameterCount { get; private set; }
-    public int ParameterOffset { get; private set; }
-    private ForwardKernelInputs _forwardKernelInputs;
-    private BackwardKernelInputs _backwardKernelInputs;
     public struct ForwardKernelInputs
     {
-        public required  int ActivationInputOffset{ get; set; }
-        public required  int ActivationOutputOffset{ get; set; }
-        public required  int ParameterOffset{ get; set; }
-        public required  int InputWidth{ get; set; }
-        public required  int InputHeight{ get; set; }
-        public required  int OutputWidth{ get; set; }
-        public required  int OutputHeight{ get; set; }
-        public required  int InputChannels{ get; set; }
-        public required int ActivationCount { get; set; }
-        public required int PoolSize { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int ActivationOutputOffset { get; set; }
+        public int ParameterOffset { get; set; }
+        public int InputWidth { get; set; }
+        public int InputHeight { get; set; }
+        public int OutputWidth { get; set; }
+        public int OutputHeight { get; set; }
+        public int InputChannels { get; set; }
+        public int ActivationCount { get; set; }
+        public int PoolSize { get; set; }
     }
-    
+
     public struct BackwardKernelInputs
     {
-        public required int ActivationInputOffset{ get; set; }
-        public required int NextLayerErrorOffset{ get; set; }
-        public required int CurrentLayerErrorOffset{ get; set; }
-        public required int ParameterOffset{ get; set; }
-        public required int InputWidth{ get; set; }
-        public required int InputHeight{ get; set; }
-        public required int OutputWidth{ get; set; }
-        public required int OutputHeight{ get; set; }
-        public required int InputChannels{ get; set; }
-        public required int ActivationCount { get; set; }
-        public required int ParameterCount { get; set; }
-        public required int PoolSize { get; set; }
+        public int ActivationInputOffset { get; set; }
+        public int NextLayerErrorOffset { get; set; }
+        public int CurrentLayerErrorOffset { get; set; }
+        public int ParameterOffset { get; set; }
+        public int InputWidth { get; set; }
+        public int InputHeight { get; set; }
+        public int OutputWidth { get; set; }
+        public int OutputHeight { get; set; }
+        public int InputChannels { get; set; }
+        public int ActivationCount { get; set; }
+        public int ParameterCount { get; set; }
+        public int PoolSize { get; set; }
     }
-    
-
-    public void Connect(IConvolutionalLayer prevLayer)
-    {
-        InputWidth = prevLayer.OutputWidth;
-        InputHeight = prevLayer.OutputHeight;
-        OutputChannels = InputChannels = prevLayer.OutputChannels;
-
-        ParameterCount = 0;
-        ParameterOffset = prevLayer.ParameterOffset + prevLayer.ParameterCount;
-
-        ActivationInputOffset = prevLayer.ActivationOutputOffset;
-        ActivationOutputOffset = prevLayer.ActivationOutputOffset + prevLayer.NumOutputs;
-        CurrentLayerErrorOffset = prevLayer.NextLayerErrorOffset;
-        NextLayerErrorOffset = prevLayer.CurrentLayerErrorOffset + NumInputs;
-
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
-            OutputHeight, InputChannels, OutputChannels, 0, 0, PoolSize);
-    }
-
-    public void Connect(ConvolutionInputConfig config)
-    {
-        InputWidth = config.Width;
-        InputHeight = config.Height;
-        OutputChannels = InputChannels = config.Grayscale ? 1 : 3;
-
-        ParameterCount = 0;
-        ParameterOffset = 0;
-
-        ActivationInputOffset = 0;
-        ActivationOutputOffset = NumInputs;
-        CurrentLayerErrorOffset = 0;
-        NextLayerErrorOffset = NumInputs;
-
-        LayerData = new LayerData(NumInputs, NumOutputs, ActivationInputOffset, ActivationOutputOffset,
-            NextLayerErrorOffset, CurrentLayerErrorOffset, ParameterOffset, 0, InputWidth, InputHeight, OutputWidth,
-            OutputHeight, InputChannels, OutputChannels, 0, 0, PoolSize);
-    }
-
-
-    public LayerData LayerData { get; set; }
 
     #region Kernels
 
     private Action<Index1D, ForwardKernelInputs, ArrayView<float>> _forwardKernel;
 
     private Action<Index1D, BackwardKernelInputs, ArrayView<float>, ArrayView<float>> _backwardKernel;
+
     public void CompileKernels(INetworkAgent agent)
     {
         _forwardKernelInputs = new ForwardKernelInputs
         {
-            ParameterOffset = ParameterOffset,
+            ParameterOffset = _maxpool.ParameterOffset,
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = ActivationInputOffset,
-            ActivationOutputOffset = ActivationOutputOffset,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            PoolSize = PoolSize,
+            ActivationInputOffset = _maxpool.ActivationInputOffset,
+            ActivationOutputOffset = _maxpool.ActivationOutputOffset,
+            InputWidth = _maxpool.InputWidth,
+            InputHeight = _maxpool.InputHeight,
+            OutputWidth = _maxpool.OutputWidth,
+            OutputHeight = _maxpool.OutputHeight,
+            InputChannels = _maxpool.InputChannels,
+            PoolSize = _maxpool.PoolSize
         };
         _backwardKernelInputs = new BackwardKernelInputs
         {
-            ParameterOffset = ParameterOffset,
+            ParameterOffset = _maxpool.ParameterOffset,
             ActivationCount = agent.Network.NetworkData.ActivationCount,
-            ActivationInputOffset = ActivationInputOffset,
-            CurrentLayerErrorOffset = CurrentLayerErrorOffset,
+            ActivationInputOffset = _maxpool.ActivationInputOffset,
+            CurrentLayerErrorOffset = _maxpool.CurrentLayerErrorOffset,
             ParameterCount = agent.Network.NetworkData.ParameterCount,
-            NextLayerErrorOffset = NextLayerErrorOffset,
-            InputWidth = InputWidth,
-            InputHeight = InputHeight,
-            OutputWidth = OutputWidth,
-            OutputHeight = OutputHeight,
-            InputChannels = InputChannels,
-            PoolSize = PoolSize,
-        };    
-        
+            NextLayerErrorOffset = _maxpool.NextLayerErrorOffset,
+            InputWidth = _maxpool.InputWidth,
+            InputHeight = _maxpool.InputHeight,
+            OutputWidth = _maxpool.OutputWidth,
+            OutputHeight = _maxpool.OutputHeight,
+            InputChannels = _maxpool.InputChannels,
+            PoolSize = _maxpool.PoolSize
+        };
+
         _forwardKernel =
             agent.Accelerator.LoadAutoGroupedStreamKernel<Index1D, ForwardKernelInputs, ArrayView<float>>(
                 ForwardKernel);
@@ -152,21 +97,20 @@ public class MaxPoolLayer : IConvolutionalLayer
 
     public void FillRandom(INetworkAgent agent)
     {
-        
     }
 
     public void Forward(INetworkAgent agent)
     {
         _forwardKernel(
-            agent.Buffers.BatchSize * LayerData.InputChannels * LayerData.OutputHeight *
-            LayerData.OutputWidth, _forwardKernelInputs, agent.Buffers.Activations.View);
+            agent.Buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
+            _maxpool.OutputWidth, _forwardKernelInputs, agent.Buffers.Activations.View);
     }
 
     public void Backward(NetworkTrainer trainer)
     {
         _backwardKernel(
-            trainer.Buffers.BatchSize * LayerData.InputChannels * LayerData.OutputHeight *
-            LayerData.OutputWidth, _backwardKernelInputs, trainer.Buffers.Activations.View,
+            trainer.Buffers.BatchSize * _maxpool.InputChannels * _maxpool.OutputHeight *
+            _maxpool.OutputWidth, _backwardKernelInputs, trainer.Buffers.Activations.View,
             trainer.Buffers.Errors.View);
     }
 
@@ -262,11 +206,8 @@ public class MaxPoolLayer : IConvolutionalLayer
         }
 
         // propagate the error to the position where the max was found
-        if (maxIndex >= 0)
-        {
-            errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
-        }
+        if (maxIndex >= 0) errors[currentErrorOffset + maxIndex] = errors[nextErrorOffset + outputIndex];
     }
-    #endregion
 
+    #endregion
 }

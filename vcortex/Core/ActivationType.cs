@@ -4,5 +4,5 @@ public enum ActivationType
 {
     Sigmoid = 0,
     Relu = 1,
-    LeakyRelu = 2,
+    LeakyRelu = 2
 }
