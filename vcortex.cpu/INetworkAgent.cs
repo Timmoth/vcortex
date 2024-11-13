@@ -1,11 +1,9 @@
-using ILGPU.Runtime;
 using vcortex.Network;
 
-namespace vcortex.gpu;
+namespace vcortex.cpu;
 
 public interface INetworkAgent : IDisposable
 {
-    Accelerator Accelerator { get; }
     NetworkConfig Network { get; }
     NetworkAcceleratorBuffers Buffers { get; }
 

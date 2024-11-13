@@ -1,8 +1,8 @@
 ﻿using vcortex.Layers;
 
-namespace vcortex.gpu.Layers;
+namespace vcortex.cpu.Layers;
 
-public static class GpuLayerFactory
+public static class CpuLayerFactory
 {
     public static ILayer Create(Layer layer)
     {

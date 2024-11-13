@@ -1,6 +1,6 @@
 using vcortex.Layers;
 
-namespace vcortex.gpu.Layers;
+namespace vcortex.cpu.Layers;
 
 public interface ILayer
 {
@@ -9,6 +9,4 @@ public interface ILayer
 
     public void Forward(INetworkAgent agent);
     public void Backward(NetworkTrainer trainer);
-
-    public void CompileKernels(INetworkAgent agent);
 }

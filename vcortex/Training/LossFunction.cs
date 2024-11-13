@@ -1,4 +1,4 @@
-namespace vcortex.Core;
+namespace vcortex.Training;
 
 public enum LossFunction
 {

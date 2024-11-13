@@ -1,6 +1,6 @@
 ﻿using ILGPU;
 using ILGPU.Runtime;
-using vcortex.Core.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu;
 

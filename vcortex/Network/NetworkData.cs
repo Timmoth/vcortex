@@ -1,4 +1,4 @@
-﻿namespace vcortex.Core;
+﻿namespace vcortex.Network;
 
 public readonly struct NetworkData
 {

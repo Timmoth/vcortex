@@ -1,4 +1,6 @@
-namespace vcortex.Core.Layers;
+using vcortex.Input;
+
+namespace vcortex.Layers;
 
 public class ConnectedInputConfig : IInputConfig
 {

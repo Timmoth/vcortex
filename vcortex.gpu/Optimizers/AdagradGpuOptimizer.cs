@@ -1,7 +1,7 @@
 using ILGPU;
 using ILGPU.Runtime;
-using vcortex.Core;
-using vcortex.Core.Optimizers;
+using vcortex.Network;
+using vcortex.Optimizers;
 
 namespace vcortex.gpu.Optimizers;
 

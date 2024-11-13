@@ -1,10 +1,10 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using vcortex.Core;
-using vcortex.Core.Layers;
+using vcortex.Layers;
+using vcortex.Training;
 
-namespace vcortex;
+namespace vcortex.Input;
 
 public static class DataLoader
 {

@@ -1,7 +1,8 @@
-using vcortex.Core.Optimizers;
+using vcortex.Input;
 using vcortex.LearningRate;
+using vcortex.Optimizers;
 
-namespace vcortex.Core;
+namespace vcortex.Training;
 
 public enum InputDateType
 {

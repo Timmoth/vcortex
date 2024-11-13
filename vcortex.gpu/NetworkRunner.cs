@@ -2,9 +2,8 @@
 using ILGPU.Runtime;
 using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
-using vcortex.Core;
-using vcortex.Core.Layers;
 using vcortex.gpu.Layers;
+using vcortex.Network;
 
 namespace vcortex.gpu;
 

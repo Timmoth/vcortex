@@ -1,10 +1,9 @@
 using vcortex.Network;
 
-namespace vcortex.gpu.Optimizers;
+namespace vcortex.cpu.Optimizers;
 
-public interface IOptimizer : IDisposable
+public interface IOptimizer
 {
-    public void Compile(NetworkTrainer trainer);
     public void Optimize(NetworkData networkData, NetworkAcceleratorBuffers buffers, float learningRate);
 
     public virtual void Reset()

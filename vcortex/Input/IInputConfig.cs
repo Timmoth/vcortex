@@ -1,4 +1,4 @@
-namespace vcortex.Core;
+namespace vcortex.Input;
 
 public interface IInputConfig
 {

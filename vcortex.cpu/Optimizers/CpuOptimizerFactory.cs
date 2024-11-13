@@ -1,8 +1,8 @@
 ﻿using vcortex.Optimizers;
 
-namespace vcortex.gpu.Optimizers;
+namespace vcortex.cpu.Optimizers;
 
-public static class GpuOptimizerFactory
+public static class CpuOptimizerFactory
 {
     public static IOptimizer Create(OptimizerConfig optimizer)
     {

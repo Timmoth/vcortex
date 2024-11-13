@@ -1,30 +1,20 @@
 ﻿using System.Diagnostics;
-using ILGPU;
-using ILGPU.Algorithms;
-using ILGPU.Runtime;
-using ILGPU.Runtime.CPU;
-using ILGPU.Runtime.Cuda;
-using vcortex.gpu.Layers;
-using vcortex.gpu.Optimizers;
+using vcortex.cpu.Layers;
+using vcortex.cpu.Optimizers;
 using vcortex.LearningRate;
 using vcortex.Network;
 using vcortex.Optimizers;
 using vcortex.Training;
 
-namespace vcortex.gpu;
+namespace vcortex.cpu;
 
 public class NetworkTrainer : INetworkAgent
 {
-    private readonly Context _context;
     private readonly float[] _flattenedExpectedOutputs;
 
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
 
-    private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int> _loadInputsKernel;
-
-    private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, ArrayView<float>, int, int, int>
-        _lossFunctionKernel;
 
     private readonly IOptimizer _optimizer;
 
@@ -32,40 +22,10 @@ public class NetworkTrainer : INetworkAgent
     {
         Network = network;
 
-        _layers = network.Layers.Select(GpuLayerFactory.Create).ToArray();
-        _optimizer = GpuOptimizerFactory.Create(optimizer);
-        _context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
+        _layers = network.Layers.Select(CpuLayerFactory.Create).ToArray();
+        _optimizer = CpuOptimizerFactory.Create(optimizer);
 
-        var useCuda = true;
-        if (useCuda)
-        {
-            foreach (var device in _context.GetCudaDevices()) Console.WriteLine(device.Name + " " + device.DeviceId);
-
-            Accelerator = _context.CreateCudaAccelerator(0);
-        }
-        else
-        {
-            _context = Context.Create(b => { b.Default().EnableAlgorithms().CPU(); });
-
-            Accelerator = _context.CreateCPUAccelerator(0);
-        }
-
-        Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
-
-        foreach (var layer in _layers) layer.CompileKernels(this);
-
-        _optimizer.Compile(this);
-
-        _loadInputsKernel =
-            Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int>(
-                    LoadInputs);
-
-        _lossFunctionKernel =
-            Accelerator
-                .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>,
-                    ArrayView<float>, int, int, int>(
-                    lossFunction == LossFunction.Mse ? MSE : CrossEntropyLoss);
+        Buffers = new NetworkAcceleratorBuffers(network, batchSize);
 
         var inputLayer = _layers[0];
         var inputCount = inputLayer.Config.NumInputs * Buffers.BatchSize;
@@ -75,9 +35,6 @@ public class NetworkTrainer : INetworkAgent
         var outputCount = outputLayer.Config.NumOutputs * Buffers.BatchSize;
         _flattenedExpectedOutputs = new float[outputCount];
     }
-
-    public Accelerator Accelerator { get; }
-
     public NetworkConfig Network { get; }
 
     public NetworkAcceleratorBuffers Buffers { get; }
@@ -87,10 +44,7 @@ public class NetworkTrainer : INetworkAgent
 
     public void Dispose()
     {
-        Accelerator.Dispose();
-        _context.Dispose();
         Buffers.Dispose();
-        _optimizer.Dispose();
     }
 
     public void InitRandomWeights()
@@ -114,99 +68,19 @@ public class NetworkTrainer : INetworkAgent
                 Array.Copy(batch[i], 0, _flattenedInputs, i * inputLayer.Config.NumInputs,
                     inputLayer.Config.NumInputs);
 
-            Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
-            _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
-                Buffers.Activations.View, inputLayer.Config.NumInputs);
-
             foreach (var layer in _layers)
             {
                 layer.Forward(this);
-                Accelerator.Synchronize();
             }
 
             for (var i = 0; i < batch.Count; i++)
             {
                 var output = new float[finalLayer.Config.NumOutputs];
-                Buffers.Activations.View
-                    .SubView(Network.NetworkData.ActivationCount * i + finalLayer.Config.ActivationOutputOffset,
-                        finalLayer.Config.NumOutputs).CopyToCPU(output);
                 outputs.Add(output);
             }
         }
 
         return outputs;
-    }
-
-
-    public static void LoadInputs(
-        Index1D index,
-        NetworkData networkData,
-        ArrayView<float> inputs,
-        ArrayView<float> activations, int numInputs)
-    {
-        // Number of samples in the batch
-        var batchIndex = index / numInputs;
-        var inputIndex = index % numInputs;
-
-        activations[networkData.ActivationCount * batchIndex + inputIndex] =
-            inputs[numInputs * batchIndex + inputIndex];
-    }
-
-    public static void MSE(
-        Index1D index,
-        NetworkData networkData,
-        ArrayView<float> outputs,
-        ArrayView<float> activations,
-        ArrayView<float> errors, int numOutputs, int activationOutputOffset, int nextLayerErrorOffset)
-    {
-        // Number of samples in the batch
-        var batchIndex = index / numOutputs;
-        var outputIndex = index % numOutputs;
-        var activationOutputIndex = batchIndex * networkData.ActivationCount + activationOutputOffset + outputIndex;
-        var nextErrorOffset = batchIndex * networkData.ActivationCount + nextLayerErrorOffset;
-
-        var expected = outputs[numOutputs * batchIndex + outputIndex];
-        var actual = activations[activationOutputIndex];
-        var error = actual - expected;
-
-        outputs[numOutputs * batchIndex + outputIndex] = error * error;
-        errors[nextErrorOffset + outputIndex] = error;
-    }
-
-    public static void CrossEntropyLoss(
-        Index1D index,
-        NetworkData networkData,
-        ArrayView<float> outputs,
-        ArrayView<float> activations,
-        ArrayView<float> errors, int numOutputs, int activationOutputOffset, int nextLayerErrorOffset)
-    {
-        // Number of samples in the batch
-        var batchIndex = index / numOutputs;
-        var outputIndex = index % numOutputs;
-        var activationOutputIndex = batchIndex * networkData.ActivationCount + activationOutputOffset + outputIndex;
-        var nextErrorOffset = batchIndex * networkData.ActivationCount + nextLayerErrorOffset;
-
-        // Get the expected and actual values
-        var expected = outputs[numOutputs * batchIndex + outputIndex];
-        var actual = activations[activationOutputIndex];
-
-        // Compute Cross-Entropy loss for each output (assuming outputs are one-hot encoded)
-        // We use a small epsilon to prevent log(0)
-        var epsilon = 1e-15f;
-        var logProb = MathF.Max(actual, epsilon); // Log of the predicted probability (softmax output)
-
-        // Compute the loss for the current sample
-        var loss = -expected * MathF.Log(logProb);
-
-        // Store the loss in the outputs array (you could sum these later for the full batch loss)
-        outputs[numOutputs * batchIndex + outputIndex] = loss;
-
-        // Calculate the gradient of the loss w.r.t. the predicted probability (backpropagation)
-        // Derivative of cross-entropy loss with softmax is: p - y
-        var gradient = actual - expected;
-
-        // Store the gradient in the errors array
-        errors[nextErrorOffset + outputIndex] = gradient;
     }
 
     private void Reset()
@@ -225,13 +99,10 @@ public class NetworkTrainer : INetworkAgent
             Array.Copy(batch[i].inputs, 0, _flattenedInputs, i * inputLayer.Config.NumInputs,
                 inputLayer.Config.NumInputs);
 
-        Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
-        _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
-            Buffers.Activations.View, inputLayer.Config.NumInputs);
+     
         foreach (var layer in _layers)
         {
             layer.Forward(this);
-            Accelerator.Synchronize();
         }
 
         var finalLayer = _layers[^1];
@@ -240,23 +111,15 @@ public class NetworkTrainer : INetworkAgent
             Array.Copy(batch[i].expectedOutputs, 0, _flattenedExpectedOutputs, i * outputLayer.Config.NumOutputs,
                 outputLayer.Config.NumOutputs);
 
-        Buffers.Errors.View.MemSetToZero();
-        Buffers.Outputs.View.CopyFromCPU(_flattenedExpectedOutputs);
-        _lossFunctionKernel(Buffers.BatchSize * outputLayer.Config.NumOutputs, Network.NetworkData,
-            Buffers.Outputs.View, Buffers.Activations.View, Buffers.Errors.View, outputLayer.Config.NumOutputs,
-            outputLayer.Config.ActivationOutputOffset, outputLayer.Config.NextLayerErrorOffset);
-        Buffers.Outputs.View.CopyToCPU(_flattenedExpectedOutputs);
         var sampleError = _flattenedExpectedOutputs.Sum();
 
         // Backward Pass
         for (var i = _layers.Length - 1; i >= 0; i--)
         {
             _layers[i].Backward(this);
-            Accelerator.Synchronize();
         }
 
         _optimizer.Optimize(Network.NetworkData, Buffers, learningRate);
-        Accelerator.Synchronize();
 
         //Console.WriteLine($" final sync: {stopwatch.ElapsedMilliseconds}ms");
         stopwatch.Restart();
@@ -370,7 +233,7 @@ public class NetworkTrainer : INetworkAgent
 
         var total = correct + incorrect;
         var accuracy = correct / (float)total * 100;
-        Console.WriteLine("Subset Accuracy: {0}/{1} ({2}%)", correct, total, XMath.Round(accuracy, 2));
+        Console.WriteLine("Subset Accuracy: {0}/{1} ({2}%)", correct, total, Math.Round(accuracy, 2));
         var elapsedTime = stopwatch.ElapsedMilliseconds;
         var throughput = total / (float)stopwatch.Elapsed.TotalSeconds;
         Console.WriteLine($"Time: {elapsedTime}ms, Throughput: {throughput}/s");

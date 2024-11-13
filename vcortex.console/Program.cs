@@ -1,8 +1,10 @@
-﻿using vcortex.Core;
-using vcortex.Core.Layers;
-using vcortex.Core.Optimizers;
-using vcortex.gpu;
+﻿using vcortex.gpu;
+using vcortex.Input;
+using vcortex.Layers;
 using vcortex.LearningRate;
+using vcortex.Network;
+using vcortex.Optimizers;
+using vcortex.Training;
 
 namespace vcortex.console;
 

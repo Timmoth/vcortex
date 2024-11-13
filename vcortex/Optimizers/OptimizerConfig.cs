@@ -1,4 +1,4 @@
-﻿namespace vcortex.Core.Optimizers;
+﻿namespace vcortex.Optimizers;
 
 public abstract class OptimizerConfig
 {

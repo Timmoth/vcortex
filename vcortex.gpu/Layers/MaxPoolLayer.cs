@@ -1,7 +1,7 @@
 using ILGPU;
 using ILGPU.Algorithms;
 using ILGPU.Runtime;
-using vcortex.Core.Layers;
+using vcortex.Layers;
 
 namespace vcortex.gpu.Layers;
 
