@@ -1,4 +1,5 @@
-﻿using vcortex.gpu;
+﻿using System.Text.Json;
+using vcortex.gpu;
 using vcortex.Input;
 using vcortex.Layers;
 using vcortex.LearningRate;
@@ -94,14 +95,14 @@ internal class Program
     private static void Main(string[] args)
     {
         Console.WriteLine("vcortex");
-        var trainConfig = TrainConfigs[3];
+        var trainConfig = TrainConfigs[1];
 
         var net = new NetworkBuilder(trainConfig.InputConfig)
             .Add(new Convolution
             {
                 Activation = ActivationType.LeakyRelu,
                 KernelSize = 3,
-                KernelsPerChannel = 16,
+                KernelsPerChannel = 32,
                 Padding = 1,
                 Stride = 1
             })
@@ -124,6 +125,16 @@ internal class Program
             })
             .Build();
 
+        var jsonOptions = new JsonSerializerOptions()
+        {
+            WriteIndented = true,
+            Converters = { new NetworkConfigConverter() },
+        };
+        var n = JsonSerializer.Serialize(net, jsonOptions);
+        File.WriteAllText("../../../../data/net.json", n);
+
+        net = JsonSerializer.Deserialize<NetworkConfig>(n, jsonOptions);
+
         // var convolutionConfig = trainConfig.InputConfig as ConvolutionInputConfig;
         // var net = new NetworkBuilder(new ConnectedInputConfig()
         // {
@@ -142,8 +153,8 @@ internal class Program
             : DataLoader.LoadData(trainConfig);
 
         var accelerator = new NetworkTrainer(net, LossFunction.CrossEntropyLoss, trainConfig.Optimizer, 100);
-        //accelerator.InitRandomWeights();
-        accelerator.ReadFromDisk("../../../../data/weights.bin");
+        accelerator.InitRandomWeights();
+        //accelerator.ReadFromDisk("../../../../data/weights.bin");
 
         accelerator.TrainAccelerated(train, trainConfig);
 

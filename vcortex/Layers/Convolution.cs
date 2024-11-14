@@ -1,13 +1,19 @@
-﻿using vcortex.Input;
+﻿using System.Text.Json.Serialization;
+using vcortex.Input;
 
 namespace vcortex.Layers;
 
 public class Convolution : ConvolutionalLayer
 {
+    [JsonPropertyName("stride")]
     public int Stride { get; set; }
+    [JsonPropertyName("padding")]
     public int Padding { get; set; }
+    [JsonPropertyName("kernels_per_channel")]
     public int KernelsPerChannel { get; set; }
+    [JsonPropertyName("kernel_size")]
     public int KernelSize { get; set; }
+    [JsonPropertyName("activation")]
     public ActivationType Activation { get; set; }
 
     internal override void Connect(IInputConfig config)

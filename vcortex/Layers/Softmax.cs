@@ -1,11 +1,14 @@
-﻿using vcortex.Input;
+﻿using System.Text.Json.Serialization;
+using vcortex.Input;
 
 namespace vcortex.Layers;
 
 public class Softmax : ConnectedLayer
 {
+    [JsonPropertyName("neurons")]
     public int Neurons { get; set; }
-    public int BiasOffset { get; set; }
+    [JsonIgnore]
+    internal int BiasOffset { get; set; }
 
     internal override void Connect(Layer prevLayer)
     {

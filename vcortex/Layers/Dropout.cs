@@ -1,9 +1,11 @@
-﻿using vcortex.Input;
+﻿using System.Text.Json.Serialization;
+using vcortex.Input;
 
 namespace vcortex.Layers;
 
 public class Dropout : ConnectedLayer
 {
+    [JsonPropertyName("dropout_rate")]
     public float DropoutRate { get; set; }
 
     internal override void Connect(Layer prevLayer)

@@ -1,9 +1,11 @@
-﻿using vcortex.Input;
+﻿using System.Text.Json.Serialization;
+using vcortex.Input;
 
 namespace vcortex.Layers;
 
 public class Maxpool : ConvolutionalLayer
 {
+    [JsonPropertyName("pool_size")]
     public int PoolSize { get; set; }
 
     internal override void Connect(Layer prevLayer)
