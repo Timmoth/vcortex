@@ -1,6 +1,12 @@
 # vcortex
 Lightweight & high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.
 
+<p align="center">
+   <div style="width:640;height:320">
+       <img style="width: inherit" src="./banner.png">
+</div>
+</p>
+
 ## Image Classification Quickstart
 Setting up a neural network for image classification tasks.
 
