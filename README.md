@@ -89,19 +89,19 @@ trainer.LoadParameters(parameters);
 ## Layers
 
 ### Convolution
-```json
+```
 {
-    "$type": "convolution",     // The layer type
-    "stride": 1,                // How many pixels to move the kernel accross each step
-    "padding": 1,               // How many pixels to pad the edges of the image
-    "kernels_per_channel": 32,  // How many kernels to apply to each channel
-    "kernel_size": 3,           // The pixel width & height of the kernel
-    "activation": 2             // The activation function used
+    "$type": "convolution",     # The layer type
+    "stride": 1,                # How many pixels to move the kernel accross each step
+    "padding": 1,               # How many pixels to pad the edges of the image
+    "kernels_per_channel": 32,  # How many kernels to apply to each channel
+    "kernel_size": 3,           # The pixel width & height of the kernel
+    "activation": 2             # The activation function used
 }
 ```
 
 ### Dense
-```json
+```
 {
     "$type": "dense",
     "activation": 2,
@@ -110,7 +110,7 @@ trainer.LoadParameters(parameters);
 ```
 
 ### Dropout
-```json
+```
 {
     "$type": "dropout",
     "dropout_rate": 0.2
@@ -118,7 +118,7 @@ trainer.LoadParameters(parameters);
 ```
 
 ### Maxpool
-```json
+```
 {
     "$type": "maxpool",
     "pool_size": 2
@@ -126,7 +126,7 @@ trainer.LoadParameters(parameters);
 ```
 
 ### Softmax
-```json
+```
 {
     "$type": "softmax",
     "neurons": 10
