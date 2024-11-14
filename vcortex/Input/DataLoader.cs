@@ -146,11 +146,10 @@ public static class DataLoader
     //}
 
     public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test)
-        LoadData(TrainConfig config)
+        LoadData(ConvolutionInputConfig inputConfig, string trainPath, string testPath)
     {
-        var inputConfig = config.InputConfig as ConvolutionInputConfig;
-        var trainImages = LoadImages(config.TrainPath, inputConfig);
-        var testImages = LoadImages(config.TestPath, inputConfig);
+        var trainImages = LoadImages(trainPath, inputConfig);
+        var testImages = LoadImages(testPath, inputConfig);
         Console.WriteLine("Loaded {0} training and {1} testing images", trainImages.Sum(t => t.Count),
             testImages.Sum(t => t.Count));
 
@@ -177,19 +176,17 @@ public static class DataLoader
         return (trainData, testData);
     }
 
-    public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test)
-        LoadMNIST(TrainConfig config)
+    public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test) LoadMNIST(ConvolutionInputConfig inputConfig, string trainPath, string testPath, int outputs)
     {
-        var inputConfig = config.InputConfig as ConvolutionInputConfig;
-        var trainImages = LoadMNISTCsv(config.TrainPath, inputConfig, config);
-        var testImages = LoadMNISTCsv(config.TestPath, inputConfig, config);
+        var trainImages = LoadMNISTCsv(trainPath, inputConfig, outputs);
+        var testImages = LoadMNISTCsv(testPath, inputConfig, outputs);
         Console.WriteLine("Loaded {0} training and {1} testing images", trainImages.Count, testImages.Count);
 
         return (trainImages, testImages);
     }
 
     private static List<(float[] imageData, float[] label)> LoadMNISTCsv(string filePath,
-        ConvolutionInputConfig inputConfig, TrainConfig config)
+        ConvolutionInputConfig inputConfig, int outputs)
     {
         var result = new List<(float[] imageData, float[] label)>();
 
@@ -207,7 +204,7 @@ public static class DataLoader
 
             // First column is the label (image label)
             var labelIndex = byte.Parse(columns[0]);
-            var labels = new float[config.Outputs];
+            var labels = new float[outputs];
             labels[labelIndex] = 1.0f;
 
             // The rest are pixel values (image data)

@@ -90,8 +90,7 @@ public class DenseLayer : IConnectedLayer
         public int NextLayerErrorOffset { get; set; }
         public int ActivationType { get; set; }
     }
-
-
+    
     #region Kernel
 
     private readonly Action<Index1D, ForwardKernelInputs, ArrayView<float>, ArrayView<float>> _forwardKernel;

@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace vcortex.LearningRate;
+namespace vcortex.Training;
 
 [JsonPolymorphic()]
 [JsonDerivedType(typeof(StepDecay), "step_decay")]

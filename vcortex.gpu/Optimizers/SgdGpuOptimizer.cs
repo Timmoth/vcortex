@@ -11,9 +11,9 @@ public class SgdOptimizer : IOptimizer
     private readonly Action<Index1D, OptimizerKernelInput, ArrayView<float>, ArrayView<float>> _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
-    private readonly NetworkTrainer _trainer;
+    private readonly GpuNetworkTrainer _trainer;
 
-    public SgdOptimizer(Sgd sgd, NetworkTrainer trainer)
+    public SgdOptimizer(Sgd sgd, GpuNetworkTrainer trainer)
     {
         _sgd = sgd;
         _trainer = trainer;

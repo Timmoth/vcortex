@@ -13,9 +13,9 @@ public class RMSpropOptimizer : IOptimizer
         _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
-    private readonly NetworkTrainer _trainer;
+    private readonly GpuNetworkTrainer _trainer;
 
-    public RMSpropOptimizer(RmsProp rmsProp, NetworkTrainer trainer)
+    public RMSpropOptimizer(RmsProp rmsProp, GpuNetworkTrainer trainer)
     {
         _rmsProp = rmsProp;
         _trainer = trainer;

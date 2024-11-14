@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using vcortex.Input;
 using vcortex.Layers;
 
@@ -27,4 +28,28 @@ public class NetworkConfig
         var parameterCount = layers.Sum(l => l.ParameterCount);
         NetworkData = new NetworkData(activationCount, parameterCount);
     }
+
+    #region Io
+
+    public static JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new NetworkConfigConverter() },
+    };
+    
+    public static NetworkConfig DeserializeFromDisk(string filepath)
+    {
+        var jsonContent = File.ReadAllText(filepath);
+        return JsonSerializer.Deserialize<NetworkConfig>(jsonContent, SerializerOptions) ?? throw new Exception("Failed to deserialize network config");
+    }
+    
+    public void SerializeToDisk(string filepath)
+    {
+        var jsonContent = JsonSerializer.Serialize(this, SerializerOptions);
+        File.WriteAllText(filepath, jsonContent);
+    }
+    
+    #endregion
+   
+    
 }

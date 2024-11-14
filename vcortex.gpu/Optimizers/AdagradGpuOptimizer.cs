@@ -14,8 +14,8 @@ public class AdagradOptimizer : IOptimizer
 
     private OptimizerKernelInput _optimizerKernelInput;
 
-    private readonly NetworkTrainer _trainer;
-    public AdagradOptimizer(AdaGrad adaGrad, NetworkTrainer trainer)
+    private readonly GpuNetworkTrainer _trainer;
+    public AdagradOptimizer(AdaGrad adaGrad, GpuNetworkTrainer trainer)
     {
         _adaGrad = adaGrad;
         _trainer = trainer;

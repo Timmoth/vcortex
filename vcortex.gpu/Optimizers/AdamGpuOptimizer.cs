@@ -17,9 +17,9 @@ public class AdamOptimizer : IOptimizer
     private OptimizerKernelInput _optimizerKernelInput;
     private readonly MemoryBuffer1D<float, Stride1D.Dense> _secondMoment;
     public int Timestep;
-    private readonly NetworkTrainer _trainer;
+    private readonly GpuNetworkTrainer _trainer;
 
-    public AdamOptimizer(Adam adam, NetworkTrainer trainer)
+    public AdamOptimizer(Adam adam, GpuNetworkTrainer trainer)
     {
         _adam = adam;
         _trainer = trainer;

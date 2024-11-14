@@ -13,9 +13,9 @@ public class SGDWithMomentumOptimizer : IOptimizer
 
     private OptimizerKernelInput _optimizerKernelInput;
     private readonly MemoryBuffer1D<float, Stride1D.Dense> _velocity;
-    private readonly NetworkTrainer _trainer;
+    private readonly GpuNetworkTrainer _trainer;
 
-    public SGDWithMomentumOptimizer(SgdMomentum sgdMomentum, NetworkTrainer trainer)
+    public SGDWithMomentumOptimizer(SgdMomentum sgdMomentum, GpuNetworkTrainer trainer)
     {
         _sgdMomentum = sgdMomentum;
         _trainer = trainer;

@@ -1,4 +1,4 @@
-namespace vcortex.LearningRate;
+namespace vcortex.Training;
 
 public class StepDecayScheduler : ILearningRateScheduler
 {

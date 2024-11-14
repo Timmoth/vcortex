@@ -1,23 +1,18 @@
-using vcortex.Input;
-using vcortex.LearningRate;
+using System.Text.Json.Serialization;
 using vcortex.Optimizers;
 
 namespace vcortex.Training;
 
-public enum InputDateType
-{
-    Csv,
-    Directory
-}
-
 public class TrainConfig
 {
-    public string TrainPath { get; set; }
-    public string TestPath { get; set; }
-    public int Epochs { get; set; }
-    public int Outputs { get; set; }
-    public InputDateType InputDateType { get; set; }
-    public IInputConfig InputConfig { get; set; }
-    public LearningRateScheduler Scheduler { get; set; }
-    public OptimizerConfig Optimizer { get; set; }
+    [JsonPropertyName("epochs")]
+    public required int Epochs { get; set; }
+    [JsonPropertyName("lr_schedule")]
+    public required LearningRateScheduler Scheduler { get; set; }
+    [JsonPropertyName("optimizer")]
+    public required OptimizerConfig Optimizer { get; set; }
+    [JsonPropertyName("loss")]
+    public required LossFunction LossFunction { get; set; }
+    [JsonPropertyName("batch")]
+    public required int BatchSize { get; set; }
 }

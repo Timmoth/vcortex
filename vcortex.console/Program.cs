@@ -1,8 +1,7 @@
-﻿using System.Text.Json;
+﻿using vcortex.cpu;
 using vcortex.gpu;
 using vcortex.Input;
 using vcortex.Layers;
-using vcortex.LearningRate;
 using vcortex.Network;
 using vcortex.Optimizers;
 using vcortex.Training;
@@ -11,93 +10,18 @@ namespace vcortex.console;
 
 internal class Program
 {
-    private static readonly List<TrainConfig> TrainConfigs = new()
-    {
-        new TrainConfig
-        {
-            TrainPath = "../../../../data/mnist_digits/train.csv",
-            TestPath = "../../../../data/mnist_digits/test.csv",
-            Outputs = 10,
-            Epochs = 10,
-            Scheduler = new ConstantLearningRate
-            {
-                LearningRate = 0.001f
-            },
-            Optimizer = new Adam(),
-            InputDateType = InputDateType.Csv,
-            InputConfig = new ConvolutionInputConfig
-            {
-                Width = 28,
-                Height = 28,
-                Grayscale = true
-            }
-        },
-        new TrainConfig
-        {
-            TrainPath = "../../../../data/mnist_fashion/train.csv",
-            TestPath = "../../../../data/mnist_fashion/test.csv",
-            Outputs = 10,
-            Epochs = 10,
-            Scheduler = new ExponentialDecay
-            {
-                InitialLearningRate = 0.002f,
-                DecayRate = 0.05f
-            },
-            Optimizer = new Adam(),
-            InputDateType = InputDateType.Csv,
-            InputConfig = new ConvolutionInputConfig
-            {
-                Width = 28,
-                Height = 28,
-                Grayscale = true
-            }
-        },
-        new TrainConfig
-        {
-            TrainPath = "../../../../data/mnist_sign/train.csv",
-            TestPath = "../../../../data/mnist_sign/test.csv",
-            Outputs = 25,
-            Epochs = 10,
-            Scheduler = new ConstantLearningRate
-            {
-                LearningRate = 0.001f
-            },
-            Optimizer = new Adam(),
-            InputDateType = InputDateType.Csv,
-            InputConfig = new ConvolutionInputConfig
-            {
-                Width = 28,
-                Height = 28,
-                Grayscale = true
-            }
-        },
-        new TrainConfig
-        {
-            TrainPath = "../../../../data/pandas_or_bears/train",
-            TestPath = "../../../../data/pandas_or_bears/test",
-            Outputs = 2,
-            Epochs = 10,
-            Scheduler = new ConstantLearningRate
-            {
-                LearningRate = 0.001f
-            },
-            Optimizer = new Adam(),
-            InputDateType = InputDateType.Directory,
-            InputConfig = new ConvolutionInputConfig
-            {
-                Width = 64,
-                Height = 64,
-                Grayscale = false
-            }
-        }
-    };
-
     private static void Main(string[] args)
     {
         Console.WriteLine("vcortex");
-        var trainConfig = TrainConfigs[1];
+        var inputConfig = new ConvolutionInputConfig
+        {
+            Width = 28,
+            Height = 28,
+            Grayscale = true
+        };
+        var (trainData, testData) = DataLoader.LoadMNIST(inputConfig, "../../../../data/mnist_fashion/train.csv", "../../../../data/mnist_fashion/test.csv", 10);
 
-        var net = new NetworkBuilder(trainConfig.InputConfig)
+        var network = new NetworkBuilder(inputConfig)
             .Add(new Convolution
             {
                 Activation = ActivationType.LeakyRelu,
@@ -121,45 +45,34 @@ internal class Program
             })
             .Add(new Softmax
             {
-                Neurons = trainConfig.Outputs
+                Neurons = 10
             })
             .Build();
-
-        var jsonOptions = new JsonSerializerOptions()
+        
+        Console.WriteLine($"parameters: {network.NetworkData.ParameterCount}");
+        Console.WriteLine($"activations: {network.NetworkData.ActivationCount}");
+        
+        var trainingConfig = new TrainConfig
         {
-            WriteIndented = true,
-            Converters = { new NetworkConfigConverter() },
+            Epochs = 20,
+            Scheduler = new ExponentialDecay()
+            {
+                InitialLearningRate = 0.001f,
+                DecayRate = 0.05f
+            },
+            Optimizer = new Adam(),
+            LossFunction = LossFunction.Mse,
+            BatchSize = 100
         };
-        var n = JsonSerializer.Serialize(net, jsonOptions);
-        File.WriteAllText("../../../../data/net.json", n);
+        
+        //var accelerator = new CpuNetworkTrainer(network, trainingConfig);
+        var accelerator = new GpuNetworkTrainer(GpuType.Cuda, 0, network, trainingConfig);
+        //accelerator.InitRandomParameters();
+        accelerator.ReadParametersFromDisk("../../../../data/weights.bin");
 
-        net = JsonSerializer.Deserialize<NetworkConfig>(n, jsonOptions);
-
-        // var convolutionConfig = trainConfig.InputConfig as ConvolutionInputConfig;
-        // var net = new NetworkBuilder(new ConnectedInputConfig()
-        // {
-        //     NumInputs = convolutionConfig.Width * convolutionConfig.Height
-        // })
-        //     .Add(new DenseLayer(512, ActivationType.Sigmoid))
-        //     //.Add(new DropoutLayer(0.1f))
-        //     .Add(new SoftmaxConnectedLayer(trainConfig.Outputs))
-        //     .Build();
-
-        Console.WriteLine($"parameters: {net.NetworkData.ParameterCount}");
-        Console.WriteLine($"activations: {net.NetworkData.ActivationCount}");
-
-        var (train, test) = trainConfig.InputDateType == InputDateType.Csv
-            ? DataLoader.LoadMNIST(trainConfig)
-            : DataLoader.LoadData(trainConfig);
-
-        var accelerator = new NetworkTrainer(net, LossFunction.CrossEntropyLoss, trainConfig.Optimizer, 100);
-        accelerator.InitRandomWeights();
-        //accelerator.ReadFromDisk("../../../../data/weights.bin");
-
-        accelerator.TrainAccelerated(train, trainConfig);
-
-        accelerator.SaveToDisk("../../../../data/weights.bin");
-
-        accelerator.Test(test, 0.1f);
+        accelerator.Train(trainData);
+        accelerator.Test(testData, 0.1f);
+        
+        accelerator.SaveParametersToDisk("../../../../data/weights.bin");
     }
 }

@@ -14,8 +14,8 @@ public class AdadeltaOptimizer : IOptimizer
         ArrayView<float>> _optimizerKernel;
 
     private OptimizerKernelInput _optimizerKernelInput;
-    private readonly NetworkTrainer _trainer;
-    public AdadeltaOptimizer(AdaDelta adaDelta, NetworkTrainer trainer)
+    private readonly GpuNetworkTrainer _trainer;
+    public AdadeltaOptimizer(AdaDelta adaDelta, GpuNetworkTrainer trainer)
     {
         _adaDelta = adaDelta;
         _trainer = trainer;

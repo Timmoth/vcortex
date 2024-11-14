@@ -1,4 +1,4 @@
-namespace vcortex.gpu.Optimizers;
+namespace vcortex.Optimizers;
 
 public interface IOptimizer : IDisposable
 {

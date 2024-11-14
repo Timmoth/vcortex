@@ -4,7 +4,7 @@ namespace vcortex.gpu.Optimizers;
 
 public static class GpuOptimizerFactory
 {
-    public static IOptimizer Create(OptimizerConfig optimizer, NetworkTrainer trainer)
+    public static IOptimizer Create(OptimizerConfig optimizer, GpuNetworkTrainer trainer)
     {
         switch (optimizer)
         {

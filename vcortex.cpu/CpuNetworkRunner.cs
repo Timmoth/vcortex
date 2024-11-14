@@ -4,17 +4,17 @@ using vcortex.Network;
 
 namespace vcortex.cpu;
 
-public class NetworkRunner : INetworkAgent
+public class CpuNetworkRunner : ICpuNetworkAgent
 {
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
 
-    public NetworkRunner(NetworkConfig network, int batchSize)
+    public CpuNetworkRunner(NetworkConfig network, int batchSize)
     {
         Network = network;
-        _layers = network.Layers.Select(CpuLayerFactory.Create).ToArray();
 
         Buffers = new NetworkAcceleratorBuffers(network, batchSize);
+        _layers = network.Layers.Select(l => CpuLayerFactory.Create(l, Buffers, network.NetworkData)).ToArray();
 
         var inputLayer = _layers[0];
         var inputCount = inputLayer.Config.NumInputs * Buffers.BatchSize;
@@ -63,4 +63,39 @@ public class NetworkRunner : INetworkAgent
 
         return outputs;
     }
+    
+    #region Io
+
+    public void SaveParametersToDisk(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+        using var writer = new BinaryWriter(stream);
+        // Write the number of arrays to allow easy deserialization
+        writer.Write(Network.NetworkData.ParameterCount);
+        foreach (var value in Buffers.Parameters) writer.Write(value);
+    }
+
+    public void ReadParametersFromDisk(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(stream);
+        // Read the number of arrays
+        var length = reader.ReadInt32();
+
+        for (var j = 0; j < length; j++) Buffers.Parameters[j] = reader.ReadSingle();
+    }
+
+    public float[] GetParameters()
+    {
+        var parameters = new float[Network.NetworkData.ParameterCount];
+        Array.Copy(Buffers.Parameters, 0, parameters, 0, parameters.Length);
+        return parameters;
+    }
+
+    public void LoadParameters(float[] parameters)
+    {
+        Array.Copy(parameters, 0, Buffers.Parameters,0, parameters.Length);
+    }
+
+    #endregion
 }

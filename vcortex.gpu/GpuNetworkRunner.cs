@@ -2,36 +2,38 @@
 using ILGPU.Runtime;
 using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
+using ILGPU.Runtime.OpenCL;
 using vcortex.gpu.Layers;
 using vcortex.Layers;
 using vcortex.Network;
 
 namespace vcortex.gpu;
 
-public class NetworkRunner : INetworkAgent
+public enum GpuType
+{
+    OpenCl,
+    Cuda
+}
+
+public class GpuNetworkRunner : IGpuNetworkAgent
 {
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
     private readonly Context context;
 
-    public NetworkRunner(NetworkConfig network, int batchSize)
+    public GpuNetworkRunner(GpuType gpuType, int gpuIndex, NetworkConfig network, int batchSize)
     {
         Network = network;
 
         context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
 
-        var useCuda = true;
-        if (useCuda)
-        {
-            foreach (var device in context.GetCudaDevices()) Console.WriteLine(device.Name + " " + device.DeviceId);
-
-            Accelerator = context.CreateCudaAccelerator(0);
+        if (gpuType == GpuType.Cuda)
+        { 
+            Accelerator = context.CreateCudaAccelerator(gpuIndex);
         }
         else
         {
-            context = Context.Create(b => { b.Default().EnableAlgorithms().CPU(); });
-
-            Accelerator = context.CreateCPUAccelerator(0);
+            Accelerator = context.CreateCLAccelerator(gpuIndex);
         }
 
         Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
@@ -119,4 +121,44 @@ public class NetworkRunner : INetworkAgent
         activations[networkData.ActivationCount * batchIndex + inputIndex] =
             inputs[numInputs * batchIndex + inputIndex];
     }
+    
+    #region Io
+
+    public void SaveParametersToDisk(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+        using var writer = new BinaryWriter(stream);
+        // Write the number of arrays to allow easy deserialization
+        writer.Write(Network.NetworkData.ParameterCount);
+        var parameters = new float[Network.NetworkData.ParameterCount];
+        Buffers.Parameters.View.CopyToCPU(parameters);
+        foreach (var value in parameters) writer.Write(value);
+        
+    }
+
+    public void ReadParametersFromDisk(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(stream);
+        // Read the number of arrays
+        var length = reader.ReadInt32();
+        var parameters = new float[length];
+
+        for (var j = 0; j < length; j++) parameters[j] = reader.ReadSingle();
+        Buffers.Parameters.View.CopyFromCPU(parameters);
+    }
+
+    public float[] GetParameters()
+    {
+        var parameters = new float[Network.NetworkData.ParameterCount];
+        Buffers.Parameters.View.CopyToCPU(parameters);
+        return parameters;
+    }
+
+    public void LoadParameters(float[] parameters)
+    {
+        Buffers.Parameters.View.CopyFromCPU(parameters);
+    }
+
+    #endregion
 }
