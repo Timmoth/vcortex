@@ -2,7 +2,6 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using vcortex.Layers;
-using vcortex.Training;
 
 namespace vcortex.Input;
 
@@ -32,24 +31,6 @@ public static class DataLoader
         return pixelData;
     }
 
-    public static void SaveImageRgb(string outputPath, int width, int height, Span<float> r, Span<float> g,
-        Span<float> b)
-    {
-        Span<byte> pixels = stackalloc byte[width * height * 3];
-
-        var offset = 0;
-        for (var i = 0; i < width * height; i++)
-        {
-            pixels[offset] = (byte)(r[i] * 255f);
-            pixels[offset + 1] = (byte)(g[i] * 255f);
-            pixels[offset + 2] = (byte)(b[i] * 255f);
-            offset += 3;
-        }
-
-        using var image = Image.LoadPixelData<Rgb24>(pixels, width, height);
-        image.Save(outputPath);
-    }
-
     public static float[] LoadImageGrayScale(string path, int width, int height)
     {
         using var image = Image.Load<Rgb24>(path);
@@ -68,22 +49,6 @@ public static class DataLoader
         return pixelData;
     }
 
-    public static void SaveImageGrayScale(string outputPath, int width, int height, Span<float> pixelData)
-    {
-        Span<byte> pixels = stackalloc byte[width * height * 3];
-
-        var offset = 0;
-        for (var i = 0; i < width * height; i++)
-        {
-            pixels[offset] = (byte)(pixelData[i] * 255f);
-            pixels[offset + 1] = (byte)(pixelData[i] * 255f);
-            pixels[offset + 2] = (byte)(pixelData[i] * 255f);
-            offset += 3;
-        }
-
-        using var image = Image.LoadPixelData<Rgb24>(pixels, width, height);
-        image.Save(outputPath);
-    }
 
     public static List<List<float[]>> LoadImages(string path, ConvolutionInputConfig config)
     {
@@ -102,48 +67,6 @@ public static class DataLoader
         return allImages;
     }
 
-    //public static void OutputImageRgb(KernelConvolutionLayer l1, float[] imageData, string prefix)
-    //{
-    //    var inputChannelSize = l1.InputWidth * l1.InputHeight;
-    //    var img = imageData.AsSpan();
-    //    SaveImageRgb($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
-    //        img.Slice(0, inputChannelSize),
-    //        img.Slice(1 * inputChannelSize, inputChannelSize),
-    //        img.Slice(2 * inputChannelSize, inputChannelSize));
-
-    //    var o = new float[l1.NumOutputs];
-    //    l1.Forward(imageData, o);
-
-    //    var offset = 0;
-    //    var output = o.AsSpan();
-    //    var channelSize = l1.OutputWidth * l1.OutputHeight;
-
-    //    for (var i = 0; i < l1.NumKernels; i++)
-    //    {
-    //        SaveImageRgb($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
-    //            output.Slice(offset * channelSize, channelSize),
-    //            output.Slice((offset + 1) * channelSize, channelSize),
-    //            output.Slice((offset + 2) * channelSize, channelSize));
-
-    //        offset += 3;
-    //    }
-    //}
-
-    //public static void OutputImageGrayScale(KernelConvolutionLayer l1, float[] imageData, string prefix)
-    //{
-    //    SaveImageGrayScale($"./{prefix}_original.jpeg", l1.InputWidth, l1.InputHeight,
-    //        imageData);
-
-    //    var o = new float[l1.NumOutputs];
-
-    //    l1.Forward(imageData, o);
-
-    //    var channelSize = l1.OutputWidth * l1.OutputHeight;
-    //    var output = o.AsSpan();
-    //    for (var i = 0; i < l1.NumKernels; i++)
-    //        SaveImageGrayScale($"./{prefix}_kernel_{i}.jpeg", l1.OutputWidth, l1.OutputHeight,
-    //            output.Slice(i * channelSize, channelSize));
-    //}
 
     public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test)
         LoadData(ConvolutionInputConfig inputConfig, string trainPath, string testPath)
@@ -176,19 +99,11 @@ public static class DataLoader
         return (trainData, testData);
     }
 
-    public static (List<(float[] imageData, float[] label)> train, List<(float[] imageData, float[] label)> test) LoadMNIST(ConvolutionInputConfig inputConfig, string trainPath, string testPath, int outputs)
-    {
-        var trainImages = LoadMNISTCsv(trainPath, inputConfig, outputs);
-        var testImages = LoadMNISTCsv(testPath, inputConfig, outputs);
-        Console.WriteLine("Loaded {0} training and {1} testing images", trainImages.Count, testImages.Count);
 
-        return (trainImages, testImages);
-    }
-
-    private static List<(float[] imageData, float[] label)> LoadMNISTCsv(string filePath,
+    public static List<(float[] inputs, float[] outputs)> LoadCsv(string filePath,
         ConvolutionInputConfig inputConfig, int outputs)
     {
-        var result = new List<(float[] imageData, float[] label)>();
+        var result = new List<(float[] inputs, float[] outputs)>();
 
         // Open the file for reading
         using var reader = new StreamReader(filePath);

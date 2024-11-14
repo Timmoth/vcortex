@@ -1,5 +1,5 @@
 # vcortex
-Lightweight CPU/GPU machine learning library for .NET, designed for neural network training and inference.
+Lightweight & high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.
 
 ## Image Classification Quickstart
 Quick guide to setting up and training a neural network for image classification tasks.

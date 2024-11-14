@@ -1,5 +1,4 @@
-﻿using vcortex.cpu;
-using vcortex.gpu;
+﻿using vcortex.gpu;
 using vcortex.Input;
 using vcortex.Layers;
 using vcortex.Network;
@@ -19,7 +18,8 @@ internal class Program
             Height = 28,
             Grayscale = true
         };
-        var (trainData, testData) = DataLoader.LoadMNIST(inputConfig, "../../../../data/mnist_fashion/train.csv", "../../../../data/mnist_fashion/test.csv", 10);
+        var trainData = DataLoader.LoadCsv("../../../../data/mnist_fashion/train.csv", inputConfig, 10);
+        var testData = DataLoader.LoadCsv("../../../../data/mnist_fashion/test.csv", inputConfig,10);
 
         var network = new NetworkBuilder(inputConfig)
             .Add(new Convolution
@@ -67,8 +67,8 @@ internal class Program
         
         //var accelerator = new CpuNetworkTrainer(network, trainingConfig);
         var accelerator = new GpuNetworkTrainer(GpuType.Cuda, 0, network, trainingConfig);
-        //accelerator.InitRandomParameters();
-        accelerator.ReadParametersFromDisk("../../../../data/weights.bin");
+        accelerator.InitRandomWeights();
+        //accelerator.ReadParametersFromDisk("../../../../data/weights.bin");
 
         accelerator.Train(trainData);
         accelerator.Test(testData, 0.1f);
