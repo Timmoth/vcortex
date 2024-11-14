@@ -5,6 +5,23 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageId>vcortex</PackageId>
+		<PackageVersion>1.0.0</PackageVersion>
+		<Authors>Tim Jones</Authors>
+		<Company>Aptacode</Company>
+		<Description>Lightweight and high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.</Description>
+		<PackageProjectUrl>https://github.com/Timmoth/vcortex</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/Timmoth/vcortex</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageTags>machine-learning ai neural-network</PackageTags>
+		<Title>vcortex</Title>
+		<IncludeSymbols>true</IncludeSymbols>
+		<ApplicationIcon>logo.ico</ApplicationIcon>
+		<PackageIcon>banner.png</PackageIcon>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -15,6 +32,17 @@
 		<InternalsVisibleTo Include="vcortex.gpu" />
 		<InternalsVisibleTo Include="vcortex.cpu" />
 		<InternalsVisibleTo Include="vcortex.console" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Include="..\banner.png">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	  <None Include="..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
 	</ItemGroup>
 
 </Project>

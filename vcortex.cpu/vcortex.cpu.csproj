@@ -4,7 +4,34 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+	    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	    <PackageId>vcortex.cpu</PackageId>
+	    <PackageVersion>1.0.0</PackageVersion>
+	    <Authors>Tim Jones</Authors>
+	    <Company>Aptacode</Company>
+	    <Description>Lightweight and high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.</Description>
+	    <PackageProjectUrl>https://github.com/Timmoth/vcortex</PackageProjectUrl>
+	    <RepositoryUrl>https://github.com/Timmoth/vcortex</RepositoryUrl>
+	    <RepositoryType>git</RepositoryType>
+	    <PackageTags>machine-learning ai neural-network</PackageTags>
+	    <Title>vcortex</Title>
+	    <IncludeSymbols>true</IncludeSymbols>
+	    <ApplicationIcon>logo.ico</ApplicationIcon>
+	    <PackageIcon>logo.png</PackageIcon>
+	    <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
+
+    <ItemGroup>
+      <None Include="..\logo.png">
+        <Pack>True</Pack>
+        <PackagePath>\</PackagePath>
+      </None>
+      <None Include="..\README.md">
+        <Pack>True</Pack>
+        <PackagePath>\</PackagePath>
+      </None>
+    </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\vcortex\vcortex.csproj" />
