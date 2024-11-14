@@ -2,7 +2,7 @@
 Lightweight & high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.
 
 ## Image Classification Quickstart
-Quick guide to setting up and training a neural network for image classification tasks.
+Setting up a neural network for image classification tasks.
 
 ```csharp
 // Define the input structure
@@ -41,7 +41,36 @@ var network = new NetworkBuilder(inputConfig)
         Neurons = 10                              // Number of output classes
     })
     .Build();
+```
+## Regression Quickstart
+Setting up a neural network for regression tasks.
 
+```csharp
+// Define the input structure
+var inputConfig = new ConnectedInputConfig()
+{
+    NumInputs = 32,         // Number of inputs
+};
+
+// Define your networks architecture
+var network = new NetworkBuilder(inputConfig)
+    .Add(new Dense
+    {
+        Activation = ActivationType.Sigmoid,    // Activation function for dense layer
+        Neurons = 128                           // Number of neurons in dense layer
+    })
+    .Add(new Dense
+    {
+        Activation = ActivationType.Sigmoid,    // Activation function for dense layer
+        Neurons = 32                            // Number of neurons in dense layer
+    })
+    .Build();
+```
+
+## Training / Testing Quickstart
+Training and testing a neural network
+
+```csharp
 // Define the training parameters   
 var trainingConfig = new TrainConfig
 {
@@ -64,8 +93,10 @@ var trainer = new GpuNetworkTrainer(GpuType.Cuda, 0, net, trainingConfig);
 // Initialize the trainable parameters to random values
 trainer.InitRandomParameters();                    // Randomize model parameters
 // Train
+var trainData = new List<(float[] input, float[] output)>();
 trainer.Train(trainData);                          // Train model on training data
 // Test
+var testData = new List<(float[] input, float[] output)>();
 trainer.Test(testData, 0.1f);                      // Test model on test data
 ```
 
