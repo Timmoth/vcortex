@@ -1,8 +1,8 @@
 # vcortex
-Lightweight CPU / GPU machine learning for dotnet
+Lightweight CPU/GPU machine learning library for .NET, designed for neural network training and inference.
 
 ## Image Classification Quickstart
-Quick guide to setting up a neural network for image classification.
+Quick guide to setting up and training a neural network for image classification tasks.
 
 ```csharp
 // Define the input structure
@@ -93,6 +93,9 @@ trainer.LoadParameters(parameters);            // Load parameters from an array
 Common neural network layer configurations.
 
 ### Convolution
+Configuration for convolutional layer used for feature extraction in image data.
+
+
 ```
 {
     "$type": "convolution",           # Specifies layer type as convolutional
@@ -105,6 +108,8 @@ Common neural network layer configurations.
 ```
 
 ### Dense
+Configuration for a fully connected (dense) layer used to combine features from previous layers.
+
 ```
 {
     "$type": "dense",                 # Specifies layer type as dense
@@ -114,6 +119,8 @@ Common neural network layer configurations.
 ```
 
 ### Dropout
+Configuration for dropout layer used for regularization to prevent overfitting.
+
 ```
 {
     "$type": "dropout",               # Specifies layer type as dropout
@@ -122,6 +129,8 @@ Common neural network layer configurations.
 ```
 
 ### Maxpool
+Configuration for max pooling layer used to reduce spatial dimensions.
+
 ```
 {
     "$type": "maxpool",               # Specifies layer type as max pooling
@@ -130,6 +139,8 @@ Common neural network layer configurations.
 ```
 
 ### Softmax
+Configuration for softmax layer used in the output for classification tasks.
+
 ```
 {
     "$type": "softmax",               # Specifies layer type as softmax for output
@@ -141,6 +152,8 @@ Common neural network layer configurations.
 Configurable algorithms for optimizing model weights.
 
 ### AdaDelta
+Optimizer that adapts learning rate based on a moving window of gradient updates.
+
 ```
 {
     "$type": "adadelta",              # AdaDelta optimizer type
@@ -150,6 +163,8 @@ Configurable algorithms for optimizing model weights.
 ```
 
 ### AdaGrad
+Optimizer that adapts learning rates for each parameter based on past gradients.
+
 ```
 {
     "$type": "adagrad",               # AdaGrad optimizer type
@@ -158,6 +173,8 @@ Configurable algorithms for optimizing model weights.
 ```
 
 ### Adam
+Popular optimizer that combines momentum and adaptive learning rates for fast convergence.
+
 ```
 {
     "$type": "adam",                  # Adam optimizer type
@@ -168,6 +185,8 @@ Configurable algorithms for optimizing model weights.
 ```
 
 ### RmsProp
+Optimizer that adjusts learning rate by dividing by a running average of gradients.
+
 ```
 {
     "$type": "rmsprop",               # RMSProp optimizer type
@@ -177,6 +196,8 @@ Configurable algorithms for optimizing model weights.
 ```
 
 ### Sgd
+Stochastic Gradient Descent, a traditional optimizer using a fixed learning rate.
+
 ```
 {
     "$type": "sgd"                    # Stochastic Gradient Descent optimizer
@@ -184,6 +205,8 @@ Configurable algorithms for optimizing model weights.
 ```
 
 ### SgdMomentum
+SGD variant that incorporates momentum to accelerate convergence.
+
 ```
 {
     "$type": "sgdmomentum",           # SGD with momentum optimizer type
@@ -195,6 +218,8 @@ Configurable algorithms for optimizing model weights.
 Adjust learning rate dynamically during training.
 
 ### Constant
+Scheduler with a fixed learning rate across all training epochs.
+
 ```
 {
     "$type": "constant",              # Constant learning rate scheduler
@@ -203,6 +228,8 @@ Adjust learning rate dynamically during training.
 ```
 
 ### ExponentialDecay
+Scheduler that gradually decreases learning rate exponentially over time.
+
 ```
 {
     "$type": "exponential_decay",     # Exponential decay scheduler
@@ -212,6 +239,8 @@ Adjust learning rate dynamically during training.
 ```
 
 ### StepDecay
+Scheduler that reduces the learning rate at set intervals during training.
+
 ```
 {
     "$type": "step_decay",            # Step decay scheduler
@@ -224,7 +253,7 @@ Adjust learning rate dynamically during training.
 Functions to calculate error between predicted and true labels.
 
 ### CrossEntropyLoss
-Used for classification tasks; compares class probabilities.
+Loss function used in classification tasks; compares model's predicted probabilities to true class labels.
 
 ### Mse
-Mean Squared Error for regression tasks; measures prediction accuracy.
+Mean Squared Error loss function used in regression tasks; measures accuracy by averaging squared prediction errors.
