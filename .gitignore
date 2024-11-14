@@ -400,3 +400,5 @@ FodyWeavers.xsd
 /mnist_digits
 /mnist_fashion
 /pandas_or_bears
+/mnist_sign
+/data
