@@ -1,16 +1,15 @@
-# vcortex
-Lightweight & high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.
-
-[![Core](https://img.shields.io/nuget/v/vcortex?label=core)](https://www.nuget.org/packages/vcortex)
-[![Cpu](https://img.shields.io/nuget/v/vcortex.cpu?label=cpu)](https://www.nuget.org/packages/vcortex.cpu)
-[![Gpu](https://img.shields.io/nuget/v/vcortex.gpu?label=gpu)](https://www.nuget.org/packages/vcortex.gpu)
 <p align="center">
    <div style="width:640;height:320">
        <img style="width: inherit" src="./banner.png">
 </div>
 </p>
+Lightweight & high performance CPU/GPU machine learning library for .NET, designed for neural network training and inference.
 
-## Image Classification Quickstart
+[![Core](https://img.shields.io/nuget/v/vcortex?label=core)](https://www.nuget.org/packages/vcortex)
+[![Cpu](https://img.shields.io/nuget/v/vcortex.cpu?label=cpu)](https://www.nuget.org/packages/vcortex.cpu)
+[![Gpu](https://img.shields.io/nuget/v/vcortex.gpu?label=gpu)](https://www.nuget.org/packages/vcortex.gpu)
+
+## Simple image classification architecture
 Setting up a neural network for image classification tasks.
 
 ```csharp
@@ -51,7 +50,7 @@ var network = new NetworkBuilder(inputConfig)
     })
     .Build();
 ```
-## Regression Quickstart
+## Simple regression architecture
 Setting up a neural network for regression tasks.
 
 ```csharp
