@@ -257,3 +257,26 @@ Loss function used in classification tasks; compares model's predicted probabili
 
 ### Mse
 Mean Squared Error loss function used in regression tasks; measures accuracy by averaging squared prediction errors.
+
+### Training Config
+Defines the training parameters and configuration for optimizing the neural network.
+
+```
+{
+  "epochs": 20,                     # Total number of training epochs or iterations over the dataset
+  "lr_schedule": {                  
+    "$type": "exponential_decay",   # Type of learning rate scheduler (e.g., exponential decay)
+    "lr": 0.001,                    # Initial learning rate to be used at the start of training
+    "decay": 0.05                   # Rate at which the learning rate decreases each epoch
+  },
+  "optimizer": {                    
+    "$type": "adam",                # Optimization algorithm type (e.g., Adam)
+    "beta1": 0.9,                   # Exponential decay rate for the first moment estimates (Adam)
+    "beta2": 0.999,                 # Exponential decay rate for the second moment estimates (Adam)
+    "epsilon": 1E-08                # Small constant for numerical stability in Adam optimizer
+  },
+  "loss": 0,                        # Loss function identifier (e.g., 0 for MSE, 1 for CrossEntropy)
+  "batch": 100                      # Size of each batch of data samples during training
+}
+
+```
