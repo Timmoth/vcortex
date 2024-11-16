@@ -4,7 +4,7 @@ using vcortex.Network;
 
 namespace vcortex.gpu;
 
-public class NetworkAcceleratorBuffers : IDisposable
+public class NetworkBuffers : IDisposable
 {
     public readonly MemoryBuffer1D<float, Stride1D.Dense> Activations;
     public readonly int BatchSize;
@@ -14,7 +14,7 @@ public class NetworkAcceleratorBuffers : IDisposable
     public readonly MemoryBuffer1D<float, Stride1D.Dense> Outputs;
     public readonly MemoryBuffer1D<float, Stride1D.Dense> Parameters;
 
-    public NetworkAcceleratorBuffers(Accelerator accelerator, NetworkConfig network, int batchSize)
+    public NetworkBuffers(Accelerator accelerator, NetworkConfig network, int batchSize)
     {
         BatchSize = batchSize;
         Parameters = accelerator.Allocate1D<float>(network.NetworkData.ParameterCount);

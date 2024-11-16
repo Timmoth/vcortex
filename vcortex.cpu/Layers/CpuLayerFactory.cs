@@ -5,7 +5,7 @@ namespace vcortex.cpu.Layers;
 
 public static class CpuLayerFactory
 {
-    public static ILayer Create(Layer layer, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public static ILayer Create(Layer layer, NetworkBuffers buffers, NetworkData networkData)
     {
         switch (layer)
         {

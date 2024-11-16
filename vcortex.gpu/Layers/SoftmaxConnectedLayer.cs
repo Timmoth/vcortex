@@ -13,9 +13,9 @@ public class SoftmaxConnectedLayer : IConnectedLayer
 
     private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly Accelerator _accelerator;
-    public SoftmaxConnectedLayer(Softmax softmax, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    public SoftmaxConnectedLayer(Softmax softmax, NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _buffers = buffers;
         _accelerator = accelerator;

@@ -5,7 +5,7 @@ namespace vcortex.cpu.Optimizers;
 
 public static class CpuOptimizerFactory
 {
-    public static IOptimizer Create(OptimizerConfig optimizer,  NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public static IOptimizer Create(OptimizerConfig optimizer,  NetworkBuffers buffers, NetworkData networkData)
     {
         switch (optimizer)
         {

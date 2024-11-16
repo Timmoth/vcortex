@@ -11,10 +11,10 @@ public class DenseLayer : IConnectedLayer
     private readonly Dense _dense;
     private readonly BackwardKernelInputs _backwardKernelInputs;
     private readonly ForwardKernelInputs _forwardKernelInputs;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly Accelerator _accelerator;
 
-    public DenseLayer(Dense dense, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    public DenseLayer(Dense dense, NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _dense = dense;
         _buffers = buffers;

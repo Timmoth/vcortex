@@ -8,12 +8,12 @@ public class AdamOptimizer : IOptimizer
     private readonly Adam _adam;
     public int Timestep;
 
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     private readonly float[] _firstMoment;
     private readonly float[] _secondMoment;
 
-    public AdamOptimizer(Adam adam, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public AdamOptimizer(Adam adam, NetworkBuffers buffers, NetworkData networkData)
     {
         _adam = adam;
         _buffers = buffers;

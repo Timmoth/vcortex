@@ -4,10 +4,10 @@ namespace vcortex.cpu.LossFunctions;
 
 public class CpuCrossEntropyLoss : ILossFunction
 {
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkConfig _network;
 
-    public CpuCrossEntropyLoss(NetworkAcceleratorBuffers buffers, NetworkConfig network)
+    public CpuCrossEntropyLoss(NetworkBuffers buffers, NetworkConfig network)
     {
         _buffers = buffers;
         _network = network;

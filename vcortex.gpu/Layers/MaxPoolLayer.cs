@@ -13,9 +13,9 @@ public class MaxPoolLayer : IConvolutionalLayer
 
     private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly Accelerator _accelerator;
-    public MaxPoolLayer(Maxpool maxpool, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    public MaxPoolLayer(Maxpool maxpool, NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _maxpool = maxpool;
         _buffers = buffers;

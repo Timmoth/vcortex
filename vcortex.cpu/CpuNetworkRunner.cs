@@ -4,30 +4,28 @@ using vcortex.Network;
 
 namespace vcortex.cpu;
 
-public class CpuNetworkRunner : ICpuNetworkAgent
+public class CpuNetworkInferenceAgent : INetworkInferenceAgent
 {
+    #region Props
+
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
-
-    public CpuNetworkRunner(NetworkConfig network, int batchSize)
+    public NetworkConfig Network { get; }
+    public NetworkBuffers Buffers { get; }
+    #endregion
+    
+    public CpuNetworkInferenceAgent(NetworkConfig network, int batchSize)
     {
         Network = network;
 
-        Buffers = new NetworkAcceleratorBuffers(network, batchSize);
+        Buffers = new NetworkBuffers(network, batchSize);
         _layers = network.Layers.Select(l => CpuLayerFactory.Create(l, Buffers, network.NetworkData)).ToArray();
 
         var inputLayer = _layers[0];
         var inputCount = inputLayer.Config.NumInputs * Buffers.BatchSize;
         _flattenedInputs = new float[inputCount];
     }
-
-    public NetworkConfig Network { get; }
-
-    public NetworkAcceleratorBuffers Buffers { get; }
-
-    public bool IsTraining => false;
-
-
+    
     public void Dispose()
     {
         Buffers.Dispose();
@@ -65,7 +63,10 @@ public class CpuNetworkRunner : ICpuNetworkAgent
     }
     
     #region Io
-
+    public void InitRandomParameters()
+    {
+        foreach (var networkLayer in _layers) networkLayer.FillRandom();
+    }
     public void SaveParametersToDisk(string filePath)
     {
         using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);

@@ -6,9 +6,9 @@ namespace vcortex.cpu.Optimizers;
 public class SgdOptimizer : IOptimizer
 {
     private readonly Sgd _sgd;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
-    public SgdOptimizer(Sgd sgd, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public SgdOptimizer(Sgd sgd, NetworkBuffers buffers, NetworkData networkData)
     {
         _sgd = sgd;
         _buffers = buffers;

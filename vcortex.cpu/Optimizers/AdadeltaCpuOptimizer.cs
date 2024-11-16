@@ -7,12 +7,12 @@ public class AdadeltaOptimizer : IOptimizer
 {
     private readonly AdaDelta _adaDelta;
 
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     private readonly float[] _accumulatedGradients;
     private readonly float[] _accumulatedUpdates;
     
-    public AdadeltaOptimizer(AdaDelta adaDelta, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public AdadeltaOptimizer(AdaDelta adaDelta, NetworkBuffers buffers, NetworkData networkData)
     {
         _adaDelta = adaDelta;
         _buffers = buffers;

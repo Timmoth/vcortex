@@ -4,10 +4,10 @@ namespace vcortex.cpu.LossFunctions;
 
 public class CpuMseLoss : ILossFunction
 {
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkConfig _network;
 
-    public CpuMseLoss(NetworkAcceleratorBuffers buffers, NetworkConfig network)
+    public CpuMseLoss(NetworkBuffers buffers, NetworkConfig network)
     {
         _buffers = buffers;
         _network = network;

@@ -6,11 +6,11 @@ namespace vcortex.cpu.Layers;
 public class DropoutLayer : IConnectedLayer
 {
     private readonly Dropout _dropout;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     private readonly bool[] _mask;
     private readonly Random _random;
-    public DropoutLayer(Dropout dropout, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public DropoutLayer(Dropout dropout, NetworkBuffers buffers, NetworkData networkData)
     {
         _dropout = dropout;
         _buffers = buffers;
@@ -26,7 +26,6 @@ public class DropoutLayer : IConnectedLayer
         var variance = 2.0f / _dropout.ParameterCount;
         for (var i = 0; i < _dropout.ParameterCount; i++)
             _buffers.Parameters[_dropout.ParameterOffset +i] = (float)(rnd.NextDouble() * 2 - 1) * MathF.Sqrt(variance);
-        
     }
 
     public void Forward()

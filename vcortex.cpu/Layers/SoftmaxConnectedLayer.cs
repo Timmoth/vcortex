@@ -6,9 +6,9 @@ namespace vcortex.cpu.Layers;
 public class SoftmaxConnectedLayer : IConnectedLayer
 {
     private readonly Softmax _softmax;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
-    public SoftmaxConnectedLayer(Softmax softmax, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public SoftmaxConnectedLayer(Softmax softmax, NetworkBuffers buffers, NetworkData networkData)
     {
         _softmax = softmax;
         _buffers = buffers;
@@ -34,7 +34,7 @@ public class SoftmaxConnectedLayer : IConnectedLayer
         var weightOffsetBase = _softmax.ParameterOffset;
 
         // First pass: Compute raw scores (weighted sum of inputs + bias)
-        for (int outputIndex = 0; outputIndex < _softmax.NumOutputs; outputIndex++)
+        for (var outputIndex = 0; outputIndex < _softmax.NumOutputs; outputIndex++)
         {
             // Initialize the sum with the bias term
             var sum = _buffers.Parameters[weightOffsetBase + _softmax.BiasOffset + outputIndex];
@@ -85,16 +85,16 @@ public class SoftmaxConnectedLayer : IConnectedLayer
     {
         Parallel.For(0, _buffers.BatchSize, batchIndex =>
         {
+            // Offsets for activations and errors
+            var activationInputOffset = batchIndex * _networkData.ActivationCount + _softmax.ActivationInputOffset;
+            var currentErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.CurrentLayerErrorOffset;
+            var nextErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.NextLayerErrorOffset;
+            var gradientOffset = batchIndex * _networkData.ParameterCount + _softmax.ParameterOffset;
+            
             for (int outputIndex = 0; outputIndex < _softmax.NumOutputs; outputIndex++)
             {
                 for (int inputIndex = 0; inputIndex < _softmax.NumInputs; inputIndex++)
                 {
-                    // Offsets for activations and errors
-                    var activationInputOffset = batchIndex * _networkData.ActivationCount + _softmax.ActivationInputOffset;
-                    var currentErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.CurrentLayerErrorOffset;
-                    var nextErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.NextLayerErrorOffset;
-                    var gradientOffset = batchIndex * _networkData.ParameterCount + _softmax.ParameterOffset;
-
                     // Calculate delta for this output neuron
                     var delta = _buffers.Errors[nextErrorOffset + outputIndex];
 
@@ -109,14 +109,13 @@ public class SoftmaxConnectedLayer : IConnectedLayer
             }
         });
         
-                Parallel.For(0, _buffers.BatchSize, batchIndex =>
+        Parallel.For(0, _buffers.BatchSize, batchIndex =>
         {
-
+            var nextErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.NextLayerErrorOffset;
+            var gradientOffset = batchIndex * _networkData.ParameterCount + _softmax.ParameterOffset;
+            
             for (int outputIndex = 0; outputIndex < _softmax.NumOutputs; outputIndex++)
             {
-                var nextErrorOffset = batchIndex * _networkData.ActivationCount + _softmax.NextLayerErrorOffset;
-                var gradientOffset = batchIndex * _networkData.ParameterCount + _softmax.ParameterOffset;
-
                 // Calculate gradient for the bias term of this output neuron
                 var delta = _buffers.Errors[nextErrorOffset + outputIndex];
                 _buffers.Gradients[gradientOffset + _softmax.BiasOffset + outputIndex] = delta;

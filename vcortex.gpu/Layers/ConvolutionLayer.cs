@@ -13,10 +13,10 @@ public class KernelConvolutionLayer : IConvolutionalLayer
 
     private readonly ForwardKernelInputs _forwardKernelInputs;
 
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     public Layer Config => _convolution;
 
-    public KernelConvolutionLayer(Convolution convolution, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    public KernelConvolutionLayer(Convolution convolution, NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _convolution = convolution;
         _buffers = buffers;

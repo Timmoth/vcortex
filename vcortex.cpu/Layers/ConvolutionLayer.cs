@@ -6,9 +6,9 @@ namespace vcortex.cpu.Layers;
 public class KernelConvolutionLayer : IConvolutionalLayer
 {
     private readonly Convolution _convolution;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
-    public KernelConvolutionLayer(Convolution convolution, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public KernelConvolutionLayer(Convolution convolution, NetworkBuffers buffers, NetworkData networkData)
     {
         _convolution = convolution;
         _buffers = buffers;
@@ -29,9 +29,9 @@ public class KernelConvolutionLayer : IConvolutionalLayer
     Parallel.For(0, _buffers.BatchSize, batchIndex =>
     {
         // Precompute the input and output activation offsets for this batch
-        int activationInputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationInputOffset;
-        int activationOutputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationOutputOffset;
-        int kernelSize = _convolution.KernelSize * _convolution.KernelSize;
+        var activationInputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationInputOffset;
+        var activationOutputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationOutputOffset;
+        var kernelSize = _convolution.KernelSize * _convolution.KernelSize;
 
         // Precompute kernelY and kernelX for each j in the kernel
         Span<int> kernelYs = stackalloc int[kernelSize];
@@ -101,6 +101,12 @@ public class KernelConvolutionLayer : IConvolutionalLayer
     {
         Parallel.For(0, _buffers.BatchSize, batchIndex =>
         {
+            // Offsets for activations, errors, and gradients
+            var activationInputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationInputOffset;
+            var currentErrorOffset = batchIndex * _networkData.ActivationCount + _convolution.CurrentLayerErrorOffset;
+            var nextErrorOffset = batchIndex * _networkData.ActivationCount + _convolution.NextLayerErrorOffset;
+            var gradientOffset = batchIndex * _networkData.ParameterCount + _convolution.ParameterOffset;
+            
             // Loop over kernels per channel and image coordinates
             for (var kernelIndex = 0; kernelIndex < _convolution.KernelsPerChannel; kernelIndex++)
             {
@@ -112,12 +118,6 @@ public class KernelConvolutionLayer : IConvolutionalLayer
                         {
                             var oc = ic * _convolution.KernelsPerChannel + kernelIndex;
                             var ic_pixel_offset = ic * _convolution.InputWidth * _convolution.InputHeight;
-
-                            // Offsets for activations, errors, and gradients
-                            var activationInputOffset = batchIndex * _networkData.ActivationCount + _convolution.ActivationInputOffset;
-                            var currentErrorOffset = batchIndex * _networkData.ActivationCount + _convolution.CurrentLayerErrorOffset;
-                            var nextErrorOffset = batchIndex * _networkData.ActivationCount + _convolution.NextLayerErrorOffset;
-                            var gradientOffset = batchIndex * _networkData.ParameterCount + _convolution.ParameterOffset;
 
                             // Compute the output index for error propagation
                             var outputIndex = y * _convolution.OutputWidth + x + oc * _convolution.OutputWidth * _convolution.OutputHeight;

@@ -2,7 +2,7 @@
 
 namespace vcortex.cpu;
 
-public class NetworkAcceleratorBuffers : IDisposable
+public class NetworkBuffers : IDisposable
 {
     public readonly float[] Activations;
     public readonly int BatchSize;
@@ -10,7 +10,7 @@ public class NetworkAcceleratorBuffers : IDisposable
     public readonly float[] Gradients;
     public readonly float[] Parameters;
 
-    public NetworkAcceleratorBuffers(NetworkConfig network, int batchSize)
+    public NetworkBuffers(NetworkConfig network, int batchSize)
     {
         BatchSize = batchSize;
         Parameters = new float[network.NetworkData.ParameterCount];

@@ -1,3 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using vcortex.Network;
+
 namespace vcortex;
 
 public static class Utils
@@ -12,4 +16,11 @@ public static class Utils
 
         return roundedValue.ToString("G" + significantFigures);
     }
+    
+    
+    public static JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new NetworkConfigConverter(), new JsonStringEnumConverter() },
+    };
 }

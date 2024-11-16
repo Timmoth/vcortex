@@ -9,13 +9,13 @@ namespace vcortex.gpu.Layers;
 public class DropoutLayer : IConnectedLayer
 {
     private readonly Dropout _dropout;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly Accelerator _accelerator;
     private BackwardKernelInputs _backwardKernelInputs;
 
     private ForwardKernelInputs _forwardKernelInputs;
     public bool IsTraining { get; set; }
-    public DropoutLayer(Dropout dropout, NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData)
+    public DropoutLayer(Dropout dropout, NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData)
     {
         _dropout = dropout;
         _buffers = buffers;

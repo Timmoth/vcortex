@@ -6,9 +6,9 @@ namespace vcortex.cpu.Layers;
 public class DenseLayer : IConnectedLayer
 {
     private readonly Dense _dense;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
-    public DenseLayer(Dense dense, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public DenseLayer(Dense dense, NetworkBuffers buffers, NetworkData networkData)
     {
         _dense = dense;
         _buffers = buffers;
@@ -29,16 +29,16 @@ public class DenseLayer : IConnectedLayer
         Parallel.For(0, _buffers.BatchSize, batchIndex =>
         {
             // Compute activation offsets once per batch
-            int activationInputOffset = batchIndex * _networkData.ActivationCount + _dense.ActivationInputOffset;
-            int activationOutputOffset = batchIndex * _networkData.ActivationCount + _dense.ActivationOutputOffset;
+            var activationInputOffset = batchIndex * _networkData.ActivationCount + _dense.ActivationInputOffset;
+            var activationOutputOffset = batchIndex * _networkData.ActivationCount + _dense.ActivationOutputOffset;
 
             for (var outputIndex = 0; outputIndex < _dense.NumOutputs; outputIndex++)
             {
                 // Offset for weights of the current output neuron
-                int weightOffset = _dense.ParameterOffset + outputIndex * _dense.NumInputs;
+                var weightOffset = _dense.ParameterOffset + outputIndex * _dense.NumInputs;
 
                 // Start sum with bias, computed once per output neuron
-                float sum = _buffers.Parameters[_dense.ParameterOffset + _dense.BiasOffset + outputIndex];
+                var sum = _buffers.Parameters[_dense.ParameterOffset + _dense.BiasOffset + outputIndex];
 
                 // Accumulate weighted input activations
                 for (var j = 0; j < _dense.NumInputs; j++)
@@ -73,9 +73,9 @@ public class DenseLayer : IConnectedLayer
             var nextErrorOffset = batchIndex * _networkData.ActivationCount + _dense.NextLayerErrorOffset;
             var gradientOffset = batchIndex * _networkData.ParameterCount + _dense.ParameterOffset;
             
-            for (int outputIndex = 0; outputIndex < _dense.NumOutputs; outputIndex++)
+            for (var outputIndex = 0; outputIndex < _dense.NumOutputs; outputIndex++)
             {
-                for (int inputIndex = 0; inputIndex < _dense.NumInputs; inputIndex++)
+                for (var inputIndex = 0; inputIndex < _dense.NumInputs; inputIndex++)
                 {
                     // Calculate the derivative of the sigmoid activation
                     var x = _buffers.Activations[activationOutputOffset + outputIndex];
@@ -111,7 +111,7 @@ public class DenseLayer : IConnectedLayer
             var gradientOffset = batchIndex * _networkData.ParameterCount + _dense.ParameterOffset;
             
             
-            for (int outputIndex = 0; outputIndex < _dense.NumOutputs; outputIndex++)
+            for (var outputIndex = 0; outputIndex < _dense.NumOutputs; outputIndex++)
             {
                 // Compute delta using sigmoid derivative
                 var x = _buffers.Activations[activationOutputOffset + outputIndex];

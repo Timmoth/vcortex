@@ -16,6 +16,9 @@ public class NetworkConfig
     [JsonIgnore]
     public readonly NetworkData NetworkData;
 
+    [JsonIgnore]
+    public readonly int OutputCount;
+    
     public NetworkConfig(Layer[] layers, IInputConfig input)
     {
         Layers = layers;
@@ -24,6 +27,7 @@ public class NetworkConfig
         layers[0].Connect(input);
         for (var i = 1; i < Layers.Length; i++) layers[i].Connect(layers[i - 1]);
 
+        OutputCount = layers[^1].NumOutputs;
         var activationCount = layers.Sum(l => l.NumOutputs) + Layers[0].NumInputs;
         var parameterCount = layers.Sum(l => l.ParameterCount);
         NetworkData = new NetworkData(activationCount, parameterCount);
@@ -31,21 +35,16 @@ public class NetworkConfig
 
     #region Io
 
-    public static JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        Converters = { new NetworkConfigConverter() },
-    };
     
     public static NetworkConfig DeserializeFromDisk(string filepath)
     {
         var jsonContent = File.ReadAllText(filepath);
-        return JsonSerializer.Deserialize<NetworkConfig>(jsonContent, SerializerOptions) ?? throw new Exception("Failed to deserialize network config");
+        return JsonSerializer.Deserialize<NetworkConfig>(jsonContent, Utils.SerializerOptions) ?? throw new Exception("Failed to deserialize network config");
     }
     
     public void SerializeToDisk(string filepath)
     {
-        var jsonContent = JsonSerializer.Serialize(this, SerializerOptions);
+        var jsonContent = JsonSerializer.Serialize(this, Utils.SerializerOptions);
         File.WriteAllText(filepath, jsonContent);
     }
     

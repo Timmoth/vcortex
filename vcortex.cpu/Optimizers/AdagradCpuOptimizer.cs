@@ -6,10 +6,10 @@ namespace vcortex.cpu.Optimizers;
 public class AdagradOptimizer : IOptimizer
 {
     private readonly AdaGrad _adaGrad;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     private readonly float[] _accumulatedSquares;
-    public AdagradOptimizer(AdaGrad adaGrad, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public AdagradOptimizer(AdaGrad adaGrad, NetworkBuffers buffers, NetworkData networkData)
     {
         _adaGrad = adaGrad;
         _buffers = buffers;

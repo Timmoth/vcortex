@@ -6,9 +6,9 @@ namespace vcortex.cpu.Layers;
 public class MaxPoolLayer : IConvolutionalLayer
 {
     private readonly Maxpool _maxpool;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
-    public MaxPoolLayer(Maxpool maxpool, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public MaxPoolLayer(Maxpool maxpool, NetworkBuffers buffers, NetworkData networkData)
     {
         _maxpool = maxpool;
         _buffers = buffers;

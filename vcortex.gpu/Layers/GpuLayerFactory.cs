@@ -6,7 +6,7 @@ namespace vcortex.gpu.Layers;
 
 public static class GpuLayerFactory
 {
-    public static ILayer Create(NetworkAcceleratorBuffers buffers, Accelerator accelerator, NetworkData networkData, Layer layer)
+    public static ILayer Create(NetworkBuffers buffers, Accelerator accelerator, NetworkData networkData, Layer layer)
     {
         switch (layer)
         {

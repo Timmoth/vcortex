@@ -6,12 +6,12 @@ namespace vcortex.cpu.Optimizers;
 public class RMSpropOptimizer : IOptimizer
 {
     private readonly RmsProp _rmsProp;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     
     private readonly float[] _movingAverageOfSquares;
 
-    public RMSpropOptimizer(RmsProp rmsProp, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public RMSpropOptimizer(RmsProp rmsProp, NetworkBuffers buffers, NetworkData networkData)
     {
         _rmsProp = rmsProp;
         _buffers = buffers;

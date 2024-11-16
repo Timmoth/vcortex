@@ -1,6 +1,5 @@
 ﻿using ILGPU;
 using ILGPU.Runtime;
-using ILGPU.Runtime.CPU;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
 using vcortex.gpu.Layers;
@@ -9,38 +8,40 @@ using vcortex.Network;
 
 namespace vcortex.gpu;
 
-public enum GpuType
+public class GpuNetworkInferenceRunner : INetworkInferenceAgent
 {
-    OpenCl,
-    Cuda
-}
+    #region Props
 
-public class GpuNetworkRunner : IGpuNetworkAgent
-{
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
-    private readonly Context context;
+    private readonly Context _context;
+    private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int> _loadInputsKernel;
+    public Accelerator Accelerator { get; }
+    public NetworkConfig Network { get; }
+    public NetworkBuffers Buffers { get; }
+    
+    #endregion
 
-    public GpuNetworkRunner(GpuType gpuType, int gpuIndex, NetworkConfig network, int batchSize)
+    public GpuNetworkInferenceRunner(GpuType gpuType, int gpuIndex, NetworkConfig network, int batchSize)
     {
         Network = network;
 
-        context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
+        _context = Context.Create(b => { b.Default().EnableAlgorithms().Math(MathMode.Fast); });
 
         if (gpuType == GpuType.Cuda)
         { 
-            Accelerator = context.CreateCudaAccelerator(gpuIndex);
+            Accelerator = _context.CreateCudaAccelerator(gpuIndex);
         }
         else
         {
-            Accelerator = context.CreateCLAccelerator(gpuIndex);
+            Accelerator = _context.CreateCLAccelerator(gpuIndex);
         }
 
-        Buffers = new NetworkAcceleratorBuffers(Accelerator, network, batchSize);
+        Buffers = new NetworkBuffers(Accelerator, network, batchSize);
 
         _layers = network.Layers.Select(l => GpuLayerFactory.Create(Buffers, Accelerator, network.NetworkData, l)).ToArray();
 
-        LoadInputsKernel =
+        _loadInputsKernel =
             Accelerator
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int>(
                     LoadInputs);
@@ -48,23 +49,18 @@ public class GpuNetworkRunner : IGpuNetworkAgent
         var inputLayer = _layers[0];
         var inputCount = inputLayer.Config.NumInputs * Buffers.BatchSize;
         _flattenedInputs = new float[inputCount];
+        
+        Console.WriteLine($"Device: '{Accelerator.Device.Name}'");
     }
-
-    public Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int> LoadInputsKernel { get; }
-
-    public Accelerator Accelerator { get; }
-
-    public NetworkConfig Network { get; }
-
-    public NetworkAcceleratorBuffers Buffers { get; }
-
-    public bool IsTraining => false;
-
-
+    
+    public void InitRandomParameters()
+    {
+        foreach (var networkLayer in _layers) networkLayer.FillRandom();
+    }
     public void Dispose()
     {
         Accelerator.Dispose();
-        context.Dispose();
+        _context.Dispose();
         Buffers.Dispose();
     }
 
@@ -85,7 +81,7 @@ public class GpuNetworkRunner : IGpuNetworkAgent
                     inputLayer.Config.NumInputs);
 
             Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
-            LoadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
+            _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
                 Buffers.Activations.View, inputLayer.Config.NumInputs);
 
             foreach (var layer in _layers)

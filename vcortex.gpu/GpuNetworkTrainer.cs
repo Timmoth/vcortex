@@ -1,6 +1,4 @@
-﻿using System.Diagnostics;
-using ILGPU;
-using ILGPU.Algorithms;
+﻿using ILGPU;
 using ILGPU.Runtime;
 using ILGPU.Runtime.Cuda;
 using ILGPU.Runtime.OpenCL;
@@ -14,22 +12,28 @@ using vcortex.Training;
 
 namespace vcortex.gpu;
 
-public class GpuNetworkTrainer : IGpuNetworkAgent
+public class GpuNetworkTrainer : NetworkTrainerBase
 {
+    #region Props
+
     private readonly Context _context;
     private readonly float[] _flattenedExpectedOutputs;
-
     private readonly float[] _flattenedInputs;
     private readonly ILayer[] _layers;
-
     private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int> _loadInputsKernel;
-    
     private readonly Action<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int, int>
         _outputKernel;
-    
     private readonly IOptimizer _optimizer;
-
     private readonly TrainConfig _trainingConfig;
+    public Accelerator Accelerator { get; }
+    public NetworkConfig Network { get; }
+    public NetworkBuffers Buffers { get; }
+    private readonly ILossFunction _lossFunction;
+    protected override ILayer[] Layers => _layers;
+    protected override TrainConfig TrainingConfig => _trainingConfig;
+    protected override IOptimizer Optimizer => _optimizer;
+    protected override ILossFunction LossFunction => _lossFunction;
+    #endregion
     
     public GpuNetworkTrainer(GpuType gpuType, int gpuIndex, NetworkConfig network, TrainConfig trainingConfig)
     {
@@ -46,7 +50,7 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
             Accelerator = _context.CreateCLAccelerator(gpuIndex);
         }
 
-        Buffers = new NetworkAcceleratorBuffers(Accelerator, network, trainingConfig.BatchSize);
+        Buffers = new NetworkBuffers(Accelerator, network, trainingConfig.BatchSize);
 
         _layers = network.Layers.Select(l => GpuLayerFactory.Create(Buffers, Accelerator, network.NetworkData, l)).ToArray();
         _optimizer = GpuOptimizerFactory.Create(trainingConfig.Optimizer, this);
@@ -61,7 +65,7 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
                 .LoadAutoGroupedStreamKernel<Index1D, NetworkData, ArrayView<float>, ArrayView<float>, int, int>(
                     OutputKernel);
 
-        if (trainingConfig.LossFunction == LossFunction.Mse)
+        if (trainingConfig.LossFunction == vcortex.Training.LossFunction.Mse)
         {
             _lossFunction = new GpuMseLoss(this);
         }
@@ -77,18 +81,10 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         var outputLayer = _layers[^1];
         var outputCount = outputLayer.Config.NumOutputs * Buffers.BatchSize;
         _flattenedExpectedOutputs = new float[outputCount];
+        
+        Console.WriteLine($"Device: '{Accelerator.Device.Name}'");
     }
-
-    public Accelerator Accelerator { get; }
-
-    public NetworkConfig Network { get; }
-
-    public NetworkAcceleratorBuffers Buffers { get; }
-
-    private readonly ILossFunction _lossFunction;
-    public bool IsTraining => true;
-
-    public void Dispose()
+    public override void Dispose()
     {
         Accelerator.Dispose();
         _context.Dispose();
@@ -97,12 +93,7 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         _lossFunction.Dispose();
     }
 
-    public void InitRandomWeights()
-    {
-        foreach (var networkLayer in _layers) networkLayer.FillRandom();
-    }
-
-    private List<float[]> Predict(List<float[]> batches)
+    protected override List<float[]> Predict(List<float[]> batches)
     {
         var outputs = new List<float[]>();
         var batchSize = Buffers.BatchSize;
@@ -175,13 +166,13 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         outputs[numOutputs * batchIndex + outputIndex] = activations[activationOutputIndex];
     }
 
-    private void Reset()
+    protected override void Reset()
     {
         _optimizer.Reset();
     }
-
-    private float Train(List<(float[] inputs, float[] expectedOutputs)> batch, float learningRate)
-    {
+    
+    protected override void InitBatch(List<(float[] inputs, float[] expectedOutputs)> batch)
+    {        
         var inputLayer = _layers[0];
 
         for (var i = 0; i < batch.Count; i++)
@@ -191,182 +182,11 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         Buffers.Inputs.View.CopyFromCPU(_flattenedInputs);
         _loadInputsKernel(_flattenedInputs.Length, Network.NetworkData, Buffers.Inputs.View,
             Buffers.Activations.View, inputLayer.Config.NumInputs);
-        
-        foreach (var layer in _layers)
-        {
-            layer.Forward();
-            Accelerator.Synchronize();
-        }
-        
-        var loss = _lossFunction.Apply(batch);
-
-        // Backward Pass
-        for (var i = _layers.Length - 1; i >= 0; i--)
-        {
-            _layers[i].Backward();
-            Accelerator.Synchronize();
-        }
-
-        _optimizer.Optimize(learningRate);
-        Accelerator.Synchronize();
-
-        return loss;
     }
-
-
-    public void Train(List<(float[] imageData, float[] label)> data)
-    {
-        foreach (var layer in _layers)
-        {
-            layer.IsTraining = true;
-        }
-
-        Console.WriteLine("Training network");
-        Reset();
-
-        var learningRateScheduler = LearningRateSchedulerFactory.Create(_trainingConfig.Scheduler);
-        var batchSize = Buffers.BatchSize;
-        var totalBatches = (int)Math.Ceiling((double)data.Count / batchSize);
-
-        var stopwatch = Stopwatch.StartNew();
-        for (var epoch = 0; epoch < _trainingConfig.Epochs; epoch++)
-        {
-            // Shuffle data in-place with Fisher-Yates for efficiency
-            for (var i = data.Count - 1; i > 0; i--)
-            {
-                var j = Random.Shared.Next(i + 1);
-                (data[i], data[j]) = (data[j], data[i]);
-            }
-
-            float epochError = 0;
-            var sampleCount = 0;
-            var learningRate = learningRateScheduler.GetLearningRate(epoch);
-            for (var batch = 0; batch < totalBatches; batch++)
-            {
-                // Slice data for the current batch
-                var batchData = data.GetRange(batch * batchSize, Math.Min(batchSize, data.Count - batch * batchSize));
-
-                // Execute forward and backward pass on the accelerator
-                var batchError = Train(batchData, learningRate);
-
-                // Accumulate batch error and sample count
-                epochError += batchError;
-                sampleCount += batchData.Count;
-            }
-
-            var averageLoss = epochError / sampleCount;
-            var elapsedTime = stopwatch.ElapsedMilliseconds;
-            var samplesPerSec = Math.Round(sampleCount / stopwatch.Elapsed.TotalSeconds);
-
-            Console.WriteLine(
-                $"Epoch {epoch}, LR: {learningRate.ToSignificantFigures(3)} Average Loss: {averageLoss.ToSignificantFigures(3)}, Time: {elapsedTime}ms, {samplesPerSec}/s");
-            stopwatch.Restart();
-        }
-    }
-
-    public void Test(List<(float[] imageData, float[] label)> data,
-        float threshold)
-    {
-        foreach (var layer in _layers)
-        {
-            layer.IsTraining = false;
-        }
-
-        Console.WriteLine("Testing network");
-
-        var correct = 0;
-        var incorrect = 0;
-        var totalLabels = 0;
-        var truePositives = new float[data.First().label.Length];
-        var falsePositives = new float[data.First().label.Length];
-        var falseNegatives = new float[data.First().label.Length];
-        var trueNegatives = new float[data.First().label.Length];
-
-        var shuffledData = data.OrderBy(x => Random.Shared.Next()).ToList();
-        var stopwatch = Stopwatch.StartNew();
-
-        // Get predictions from the model
-        var predicted = Predict(shuffledData.Select(s => s.imageData).ToList());
-
-        for (var index = 0; index < predicted.Count; index++)
-        {
-            var prediction = predicted[index];
-            var expected = shuffledData[index].label;
-
-            // Check if the full set of labels match for subset accuracy
-            if (IsSubsetPredictionCorrect(expected, prediction, threshold))
-                correct++;
-            else
-                incorrect++;
-
-            // Update confusion matrix statistics for each label
-            for (var i = 0; i < expected.Length; i++)
-            {
-                var expectedLabel = expected[i] > threshold;
-                var predictedLabel = prediction[i] > threshold;
-
-                if (expectedLabel && predictedLabel)
-                    truePositives[i]++;
-                if (!expectedLabel && predictedLabel)
-                    falsePositives[i]++;
-                if (expectedLabel && !predictedLabel)
-                    falseNegatives[i]++;
-                if (!expectedLabel && !predictedLabel)
-                    trueNegatives[i]++;
-            }
-
-            totalLabels += expected.Length;
-        }
-
-        // Precision, Recall, F1-Score for each label
-        for (var i = 0; i < truePositives.Length; i++)
-        {
-            var precision = Precision(truePositives[i], falsePositives[i]);
-            var recall = Recall(truePositives[i], falseNegatives[i]);
-            var f1Score = F1Score(precision, recall);
-
-            Console.WriteLine($"Class {i}: Precision: {precision}, Recall: {recall}, F1-Score: {f1Score}");
-        }
-
-        var total = correct + incorrect;
-        var accuracy = correct / (float)total * 100;
-        Console.WriteLine("Subset Accuracy: {0}/{1} ({2}%)", correct, total, XMath.Round(accuracy, 2));
-        var elapsedTime = stopwatch.ElapsedMilliseconds;
-        var throughput = total / (float)stopwatch.Elapsed.TotalSeconds;
-        Console.WriteLine($"Time: {elapsedTime}ms, Throughput: {throughput}/s");
-    }
-
-    // Helper function for subset accuracy (strict comparison)
-    private static bool IsSubsetPredictionCorrect(float[] expected, float[] actual, float threshold)
-    {
-        // Check if all labels for a sample are predicted correctly
-        for (var i = 0; i < expected.Length; i++)
-            if (expected[i] > threshold != actual[i] > threshold)
-                return false; // If any label is incorrect, return false
-        return true;
-    }
-
-    // Precision (true positives / (true positives + false positives))
-    private static float Precision(float truePositives, float falsePositives)
-    {
-        return truePositives + falsePositives == 0 ? 0 : truePositives / (truePositives + falsePositives);
-    }
-
-    // Recall (true positives / (true positives + false negatives))
-    private static float Recall(float truePositives, float falseNegatives)
-    {
-        return truePositives + falseNegatives == 0 ? 0 : truePositives / (truePositives + falseNegatives);
-    }
-
-    // F1 Score (harmonic mean of Precision and Recall)
-    private static float F1Score(float precision, float recall)
-    {
-        return precision + recall == 0 ? 0 : 2 * (precision * recall) / (precision + recall);
-    }
-
+    
     #region Io
 
-    public void SaveParametersToDisk(string filePath)
+    public override void SaveParametersToDisk(string filePath)
     {
         using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
         using var writer = new BinaryWriter(stream);
@@ -378,7 +198,7 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         
     }
 
-    public void ReadParametersFromDisk(string filePath)
+    public override void ReadParametersFromDisk(string filePath)
     {
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
         using var reader = new BinaryReader(stream);
@@ -390,14 +210,14 @@ public class GpuNetworkTrainer : IGpuNetworkAgent
         Buffers.Parameters.View.CopyFromCPU(parameters);
     }
 
-    public float[] GetParameters()
+    public override float[] GetParameters()
     {
         var parameters = new float[Network.NetworkData.ParameterCount];
         Buffers.Parameters.View.CopyToCPU(parameters);
         return parameters;
     }
 
-    public void LoadParameters(float[] parameters)
+    public override void LoadParameters(float[] parameters)
     {
         Buffers.Parameters.View.CopyFromCPU(parameters);
     }

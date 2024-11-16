@@ -6,12 +6,12 @@ namespace vcortex.cpu.Optimizers;
 public class SGDWithMomentumOptimizer : IOptimizer
 {
     private readonly SgdMomentum _sgdMomentum;
-    private readonly NetworkAcceleratorBuffers _buffers;
+    private readonly NetworkBuffers _buffers;
     private readonly NetworkData _networkData;
     
     private readonly float[] _velocity;
 
-    public SGDWithMomentumOptimizer(SgdMomentum sgdMomentum, NetworkAcceleratorBuffers buffers, NetworkData networkData)
+    public SGDWithMomentumOptimizer(SgdMomentum sgdMomentum, NetworkBuffers buffers, NetworkData networkData)
     {
         _sgdMomentum = sgdMomentum;
         _buffers = buffers;
